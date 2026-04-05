@@ -14,7 +14,7 @@ services:
     env: node
     plan: free          # free tier; spins down after 15 min inactivity
     region: oregon      # change to: frankfurt, singapore, ohio, virginia
-    buildCommand: npm install && npm run build:cloud
+    buildCommand: npm install --include=dev && npm run build:cloud
     startCommand: node server/index.js
     healthCheckPath: /api/data
     envVars:

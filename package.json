@@ -11,7 +11,7 @@
     "dev:electron": "cross-env NODE_ENV=development electron .",
     "electron": "node scripts/start-electron.js",
     "build:web": "vite build",
-    "build:cloud": "cross-env VITE_BASE_URL=/ vite build",
+    "build:cloud": "VITE_BASE_URL=/ vite build",
     "lint": "eslint main.js preload.js src/main/**/*.js src/lib/**/*.js src/**/*.jsx",
     "lint:fix": "eslint --fix main.js preload.js src/main/**/*.js src/lib/**/*.js src/**/*.jsx",
     "build": "npm run lint && npm run build:web && electron-builder --win"

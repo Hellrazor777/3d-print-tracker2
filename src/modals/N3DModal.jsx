@@ -150,25 +150,42 @@ export default function N3DModal() {
     selectedDesigns.forEach((d, di) => {
       const filaments = d.filaments || [];
       const productName = d.title;
-      if (!products[productName]) {
+      const isNewProduct = !products[productName];
+      if (isNewProduct) {
         newProducts[productName] = {
           category: importCat || d.category || '',
           n3dUrl: d.slug ? 'https://www.n3dmelbourne.com/design/' + d.slug : '',
           designer: 'N3D Melbourne',
           source: 'n3d-membership',
         };
-        // Download cover image and update product state once done
-        if (d.image_url && isElectron && appSettings.threeMfFolder) {
-          window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder).then(async folder => {
-            if (folder) {
-              const ext = d.image_url.split('.').pop().split('?')[0] || 'webp';
-              const result = await window.electronAPI.downloadImage(d.image_url, folder, 'cover.' + ext);
-              if (result?.ok && result.destPath) {
-                await setProductImagePath(productName, result.destPath);
-              }
+      }
+
+      // Desktop file downloads — folder is always resolved so 3MFs are fetched
+      // even when re-importing a product that already exists in the tracker
+      if (isElectron && appSettings.threeMfFolder) {
+        window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder).then(async folder => {
+          if (!folder) return;
+          // Cover image — only needed once for new products
+          if (isNewProduct && d.image_url) {
+            const ext = d.image_url.split('.').pop().split('?')[0] || 'webp';
+            const result = await window.electronAPI.downloadImage(d.image_url, folder, 'cover.' + ext);
+            if (result?.ok && result.destPath) {
+              await setProductImagePath(productName, result.destPath);
             }
-          });
-        }
+          }
+          // 3MF profiles — always attempt so new/renamed files on the site are fetched
+          // API returns `profiles` as an array; derive count from it
+          const profileCount = Array.isArray(d.profiles) ? d.profiles.length : (typeof d.profiles === 'number' ? d.profiles : 0);
+          const tok0 = appSettings.n3dAuthToken0;
+          const tok1 = appSettings.n3dAuthToken1;
+          if (tok0 && tok1 && profileCount > 0) {
+            window.electronAPI.downloadN3dFiles(d.slug, profileCount, folder, tok0, tok1).then(r => {
+              if (r?.error === 'AUTH_INVALID') {
+                showStatus('3MF auth tokens invalid — update them in Settings → 3MF Files', 'err');
+              }
+            });
+          }
+        });
       }
 
       if (filaments.length === 0) {

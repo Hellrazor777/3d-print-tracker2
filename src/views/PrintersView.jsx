@@ -1601,7 +1601,7 @@ export default function PrintersView() {
       {/* Printer grid */}
       {totalPrinters > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {bambuDevices.map(device => {
+          {[...bambuDevices].sort((a, b) => (a.name || a.dev_product_name || '').localeCompare(b.name || b.dev_product_name || '')).map(device => {
             const serial = device.dev_id;
             const state = printerStatus[serial];
             return (
@@ -1619,7 +1619,7 @@ export default function PrintersView() {
             );
           })}
 
-          {isElectron && snapPrinters.map(printer => {
+          {isElectron && [...snapPrinters].sort((a, b) => (a.name || '').localeCompare(b.name || '')).map(printer => {
             const state = printerStatus[printer.id];
             return (
               <div key={printer.id} style={{ position: 'relative' }}>

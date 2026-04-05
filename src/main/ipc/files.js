@@ -5,6 +5,64 @@ const http = require('http');
 const { dialog, shell, app } = require('electron');
 const { execFile } = require('child_process');
 
+function sanitize3mfFileName(fileName) {
+  let s = fileName.trim();
+  if (s.startsWith('#')) s = s.slice(1);
+  // "1234 DesignName" → "1234 - DesignName"
+  s = s.replace(/^(\d{4}) ([A-Za-z])/, '$1 - $2');
+  // Strip chars invalid on Windows
+  s = s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '');
+  return s.trim() || 'model.3mf';
+}
+
+function download3mfToPath(url, destDir, authToken0, authToken1, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) { reject(new Error('Too many redirects')); return; }
+    const parsedUrl = new URL(url);
+    const lib = parsedUrl.protocol === 'https:' ? https : http;
+    const opts = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || (parsedUrl.protocol === 'https:' ? 443 : 80),
+      path: parsedUrl.pathname + parsedUrl.search,
+      method: 'GET',
+      headers: {
+        'Cookie': `sb-n3d-auth-token.0=${authToken0}; sb-n3d-auth-token.1=${authToken1}`,
+        'User-Agent': '3DPrintTracker/1.0',
+      },
+    };
+    const req = lib.request(opts, res => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        const next = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : new URL(res.headers.location, url).toString();
+        return resolve(download3mfToPath(next, destDir, authToken0, authToken1, redirectCount + 1));
+      }
+      if (res.statusCode === 401 || res.statusCode === 403) {
+        res.resume();
+        return reject(new Error('AUTH_INVALID'));
+      }
+      if (res.statusCode >= 400) {
+        res.resume();
+        return reject(new Error('HTTP ' + res.statusCode));
+      }
+      // Derive filename from Content-Disposition
+      const cd = res.headers['content-disposition'] || '';
+      const m = cd.match(/filename\*?=(?:UTF-8'')?["']?([^"';\r\n]+)["']?/i);
+      const rawName = m ? m[1].trim() : '';
+      const fileName = sanitize3mfFileName(rawName || 'model.3mf');
+      const destPath = path.join(destDir, fileName);
+      const file = fs.createWriteStream(destPath);
+      res.pipe(file);
+      file.on('finish', () => file.close(() => resolve({ fileName, destPath })));
+      file.on('error', err => { fs.unlink(destPath, () => {}); reject(err); });
+    });
+    req.on('error', err => reject(err));
+    req.setTimeout(60000, () => { req.destroy(); reject(new Error('Timed out after 60s')); });
+    req.end();
+  });
+}
+
 function downloadImageToPath(url, destPath, redirectCount = 0) {
   return new Promise((resolve, reject) => {
     if (redirectCount > 5) {
@@ -176,6 +234,38 @@ module.exports = function registerFilesHandlers(ipcMain, mainWin, loadSettings) 
       fs.copyFileSync(srcPath, dest);
       return { ok: true, destPath: dest };
     } catch(e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── Download N3D 3MF profiles (requires session cookies, desktop only) ──
+  ipcMain.handle('download-3mf-n3d', async (_, { slug, profiles, destFolder, authToken0, authToken1 }) => {
+    if (!destFolder || !slug || !authToken0 || !authToken1) {
+      return { ok: false, error: 'Missing required parameters' };
+    }
+    try {
+      if (!fs.existsSync(destFolder)) fs.mkdirSync(destFolder, { recursive: true });
+    } catch(e) {
+      return { ok: false, error: 'Could not create folder: ' + e.message };
+    }
+    const count = Math.max(0, profiles || 0);
+    if (count === 0) return { ok: true, files: [], errors: [] };
+
+    const downloadedFiles = [];
+    const errors = [];
+
+    for (let i = 0; i < count; i++) {
+      const url = `https://www.n3dmelbourne.com/api/design/${slug}/download-profile?profileIndex=${i}`;
+      try {
+        const result = await download3mfToPath(url, destFolder, authToken0, authToken1);
+        downloadedFiles.push(result.fileName);
+      } catch(e) {
+        if (e.message === 'AUTH_INVALID') {
+          return { ok: false, error: 'AUTH_INVALID', files: downloadedFiles, errors };
+        }
+        errors.push(`profile ${i}: ${e.message}`);
+      }
+    }
+
+    return { ok: true, files: downloadedFiles, errors };
   });
 
   // ── Open external URL in browser ──

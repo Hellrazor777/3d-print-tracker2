@@ -32,6 +32,8 @@ export default function SettingsModal() {
     orcaPath: appSettings.orcaPath || '',
     invPopup: appSettings.invPopup !== false,
     n3dApiKey: appSettings.n3dApiKey || '',
+    n3dAuthToken0: appSettings.n3dAuthToken0 || '',
+    n3dAuthToken1: appSettings.n3dAuthToken1 || '',
   });
   const [collapsed, setCollapsed] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('ssec-collapsed') || '[]')); } catch { return new Set(); }
@@ -104,12 +106,32 @@ export default function SettingsModal() {
 
             {isElectron && (
               <SettingsSection collapsed={collapsed} toggleSection={toggleSection} id="ssec-3mf" title="3MF Files">
-                <div className="field" style={{ marginBottom: 0 }}>
+                <div className="field">
                   <label>Root folder</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                     <input value={form.threeMfFolder || ''} readOnly placeholder="No folder selected" style={{ flex: 1, fontSize: 12, fontFamily: 'monospace' }} />
                     <button className="btn" onClick={async () => { if (window.electronAPI?.pick3mfFolder) { const f = await window.electronAPI.pick3mfFolder(); if (f) setForm(x => ({ ...x, threeMfFolder: f })); } }}>Browse</button>
                   </div>
+                </div>
+                <div className="field">
+                  <label>N3D session token 0 <span className="settings-hint">(sb-n3d-auth-token.0 cookie — for 3MF downloads)</span></label>
+                  <input
+                    type="password"
+                    value={form.n3dAuthToken0 || ''}
+                    onChange={e => setForm(f => ({ ...f, n3dAuthToken0: e.target.value }))}
+                    placeholder="Paste from browser DevTools → Application → Cookies"
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
+                </div>
+                <div className="field" style={{ marginBottom: 0 }}>
+                  <label>N3D session token 1 <span className="settings-hint">(sb-n3d-auth-token.1 cookie — for 3MF downloads)</span></label>
+                  <input
+                    type="password"
+                    value={form.n3dAuthToken1 || ''}
+                    onChange={e => setForm(f => ({ ...f, n3dAuthToken1: e.target.value }))}
+                    placeholder="Paste from browser DevTools → Application → Cookies"
+                    style={{ fontFamily: 'monospace', fontSize: 12 }}
+                  />
                 </div>
               </SettingsSection>
             )}

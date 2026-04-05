@@ -231,7 +231,7 @@ function isX1Model(name) {
   return /x1/i.test(name || '');
 }
 
-function CameraModal({ device, onClose, isElectron }) {
+function CameraModal({ device, storedIp, onSaveIp, onClose, isElectron }) {
   const serial = device.dev_id;
   const name   = device.name || device.dev_product_name || serial;
   const model  = device.dev_product_name || device.name || '';
@@ -241,8 +241,8 @@ function CameraModal({ device, onClose, isElectron }) {
   const [fetchState, setFetchState] = useState('idle'); // 'idle' | 'loading' | 'done' | 'error'
   const [fetchError, setFetchError] = useState('');
 
-  // IP + access code — filled from cloud auto-fetch or manual entry
-  const [ip,         setIp]         = useState(device.ip || '');
+  // IP + access code — filled from storedIp, cloud auto-fetch, or manual entry
+  const [ip,         setIp]         = useState(storedIp || device.ip || '');
   const [accessCode, setAccessCode] = useState(
     device.dev_access_code || device.access_code || ''
   );
@@ -331,7 +331,8 @@ function CameraModal({ device, onClose, isElectron }) {
     setError(''); setRunning(true); setFrame(null);
     const res = await window.electronAPI.printerBambuCameraStart(serial, useIp, useCode);
     if (res?.error) { setError(res.error); setRunning(false); }
-  }, [serial, ip, accessCode]);
+    else if (useIp && useIp !== storedIp) onSaveIp(useIp);
+  }, [serial, ip, accessCode, storedIp, onSaveIp]);
 
   const elStop = useCallback(() => {
     window.electronAPI.printerBambuCameraStop(serial);
@@ -360,6 +361,7 @@ function CameraModal({ device, onClose, isElectron }) {
   const webStart = () => {
     if (!ip) { setWebError('Enter the printer IP address to connect'); return; }
     setWebError(''); setStarted(true); setMjpegKey(k => k + 1);
+    if (ip !== storedIp) onSaveIp(ip);
   };
   const webStop = () => { setStarted(false); };
 
@@ -1355,6 +1357,11 @@ export default function PrintersView() {
     await saveBambuAuth(null);
   }, [saveBambuAuth, isElectron]);
 
+  const handleSaveCameraIp = useCallback(async (serial, newIp) => {
+    const cameraIps = { ...(bambuAuth?.cameraIps || {}), [serial]: newIp };
+    await saveBambuAuth({ ...bambuAuth, cameraIps });
+  }, [bambuAuth, saveBambuAuth]);
+
   const handleReconnectBambu = useCallback(async () => {
     if (isElectron) {
       if (window.electronAPI && bambuAuth?.accessToken) window.electronAPI.printerBambuConnect(bambuAuth);
@@ -1517,7 +1524,13 @@ export default function PrintersView() {
       {cameraSerial && (() => {
         const dev = bambuDevices.find(d => d.dev_id === cameraSerial);
         return dev ? (
-          <CameraModal device={dev} onClose={() => setCameraSerial(null)} isElectron={isElectron} />
+          <CameraModal
+            device={dev}
+            storedIp={bambuAuth?.cameraIps?.[cameraSerial] || ''}
+            onSaveIp={(newIp) => handleSaveCameraIp(cameraSerial, newIp)}
+            onClose={() => setCameraSerial(null)}
+            isElectron={isElectron}
+          />
         ) : null;
       })()}
 

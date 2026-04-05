@@ -1,0 +1,200 @@
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const http = require('http');
+const { dialog, shell, app } = require('electron');
+const { execFile } = require('child_process');
+
+function downloadImageToPath(url, destPath, redirectCount = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 5) {
+      reject(new Error('Too many redirects'));
+      return;
+    }
+
+    const lib = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(destPath);
+    const request = lib.get(url, res => {
+      if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        const nextUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : new URL(res.headers.location, url).toString();
+        res.resume();
+        resolve(downloadImageToPath(nextUrl, destPath, redirectCount + 1));
+        return;
+      }
+
+      if (res.statusCode && res.statusCode >= 400) {
+        file.destroy();
+        fs.unlink(destPath, () => {});
+        res.resume();
+        reject(new Error('HTTP ' + res.statusCode));
+        return;
+      }
+
+      res.pipe(file);
+      file.on('finish', () => {
+        file.close(resolve);
+      });
+      file.on('error', err => {
+        fs.unlink(destPath, () => {});
+        reject(err);
+      });
+    });
+
+    request.on('error', err => {
+      file.destroy();
+      fs.unlink(destPath, () => {});
+      reject(err);
+    });
+  });
+}
+
+module.exports = function registerFilesHandlers(ipcMain, mainWin, loadSettings) {
+  // ── CSV dialogs ──
+  ipcMain.handle('open-csv-dialog', async () => {
+    const result = await dialog.showOpenDialog({ filters: [{ name: 'CSV', extensions: ['csv'] }], properties: ['openFile'] });
+    if (result.canceled || !result.filePaths.length) return null;
+    try { return fs.readFileSync(result.filePaths[0], 'utf8'); } catch(e) { return null; }
+  });
+
+  ipcMain.handle('save-csv-dialog', async (_, content) => {
+    const result = await dialog.showSaveDialog({ defaultPath: '3d-print-export.csv', filters: [{ name: 'CSV', extensions: ['csv'] }] });
+    if (result.canceled || !result.filePath) return false;
+    try { fs.writeFileSync(result.filePath, content, 'utf8'); return true; } catch(e) { return false; }
+  });
+
+  // ── 3MF folder picker ──
+  ipcMain.handle('pick-3mf-folder', async () => {
+    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+
+  // ── 3MF upload ──
+  ipcMain.handle('upload-3mf', async (_, { productName, destFolder }) => {
+    if (!destFolder) return { error: 'No 3MF root folder configured' };
+    const result = await dialog.showOpenDialog({
+      title: 'Select 3MF file',
+      filters: [{ name: '3MF Files', extensions: ['3mf'] }, { name: 'All Files', extensions: ['*'] }],
+      properties: ['openFile']
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const srcPath = result.filePaths[0];
+    const fileName = path.basename(srcPath);
+    const safeName = productName.replace(/[<>:"\/\\|?*]/g, '_');
+    try {
+      const productFolder = path.join(destFolder, safeName);
+      if (!fs.existsSync(productFolder)) fs.mkdirSync(productFolder, { recursive: true });
+      const destPath = path.join(productFolder, fileName);
+      fs.copyFileSync(srcPath, destPath);
+      return { fileName, destPath, productFolder };
+    } catch(e) { return { error: e.message }; }
+  });
+
+  // ── Open folder in Explorer ──
+  ipcMain.handle('open-folder', async (_, folderPath) => {
+    try { await shell.openPath(folderPath); return true; }
+    catch(e) { return false; }
+  });
+
+  // ── Get/create product folder ──
+  ipcMain.handle('get-product-folder', (_, { productName, rootFolder }) => {
+    if (!rootFolder) return null;
+    const safeName = productName.replace(/[<>:"\/\\|?*]/g, '_');
+    const folderPath = path.join(rootFolder, safeName);
+    try { if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true }); }
+    catch(e) { console.error('Could not create folder:', e.message); }
+    return folderPath;
+  });
+
+  // ── Create product folder on product creation ──
+  ipcMain.handle('create-product-folder', (_, { productName, rootFolder }) => {
+    if (!rootFolder || !productName) return null;
+    const safeName = productName.replace(/[<>:"\/\\|?*]/g, '_');
+    const folderPath = path.join(rootFolder, safeName);
+    try {
+      if (!fs.existsSync(folderPath)) fs.mkdirSync(folderPath, { recursive: true });
+      return folderPath;
+    } catch(e) { return null; }
+  });
+
+  // ── Open file or folder in slicer ──
+  ipcMain.handle('open-in-slicer', async (_, { filePath, slicer }) => {
+    const settings = loadSettings();
+    const slicerPath = slicer === 'bambu'
+      ? (settings.bambuPath || 'C:\\Program Files\\Bambu Studio\\bambu-studio.exe')
+      : (settings.orcaPath || 'C:\\Program Files\\OrcaSlicer\\orca-slicer.exe');
+
+    let targetFile = filePath;
+    try {
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+        const files = fs.readdirSync(filePath).filter(f => f.toLowerCase().endsWith('.3mf'));
+        if (files.length > 0) targetFile = path.join(filePath, files[0]);
+        else { await shell.openPath(filePath); return { ok: true, fallback: true }; }
+      }
+    } catch(e) {}
+
+    try {
+      if (fs.existsSync(slicerPath)) {
+        const child = execFile(slicerPath, [targetFile], { detached: true, stdio: 'ignore' });
+        child.unref();
+        return { ok: true };
+      } else {
+        await shell.openPath(targetFile);
+        return { ok: true, fallback: true };
+      }
+    } catch(e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── Image download (for N3D thumbnails) ──
+  ipcMain.handle('download-image', async (_, { url, destFolder, fileName }) => {
+    try {
+      if (!fs.existsSync(destFolder)) fs.mkdirSync(destFolder, { recursive: true });
+      const destPath = path.join(destFolder, fileName);
+      await downloadImageToPath(url, destPath);
+      return { ok: true, destPath };
+    } catch(e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── Image upload (manual product image) ──
+  ipcMain.handle('upload-image', async (_, { destFolder, fileName }) => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select product image',
+      filters: [{ name: 'Images', extensions: ['jpg','jpeg','png','webp','gif'] }],
+      properties: ['openFile']
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const srcPath = result.filePaths[0];
+    const ext = path.extname(srcPath);
+    const resolvedFolder = destFolder || app.getPath('userData');
+    const dest = path.join(resolvedFolder, (fileName || 'cover') + ext);
+    try {
+      if (!fs.existsSync(resolvedFolder)) fs.mkdirSync(resolvedFolder, { recursive: true });
+      fs.copyFileSync(srcPath, dest);
+      return { ok: true, destPath: dest };
+    } catch(e) { return { ok: false, error: e.message }; }
+  });
+
+  // ── Open external URL in browser ──
+  ipcMain.handle('open-external', async (_, url) => {
+    try { await shell.openExternal(url); return true; }
+    catch(e) { return false; }
+  });
+
+  // ── Get Bambu Studio version ──
+  ipcMain.handle('get-bambu-version', async (_, exePath) => {
+    if (!exePath || !fs.existsSync(exePath)) return null;
+    const safePath = exePath.replace(/'/g, "''");
+    return new Promise(resolve => {
+      execFile('powershell', [
+        '-NoProfile', '-NonInteractive', '-Command',
+        `(Get-Item '${safePath}').VersionInfo.FileVersion`
+      ], { timeout: 8000 }, (err, stdout) => {
+        resolve(err ? null : (stdout.trim() || null));
+      });
+    });
+  });
+};

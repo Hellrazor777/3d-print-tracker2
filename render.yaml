@@ -1,0 +1,25 @@
+# Render.com deployment config for 3D Print Tracker
+# Docs: https://render.com/docs/blueprint-spec
+#
+# One web service handles everything:
+#   - Builds the React frontend (dist-web/)
+#   - Serves the built frontend as static files
+#   - Runs the Express API (/api/*)
+#   - Runs the Bambu MQTT connection
+#   - Streams live printer state to the browser via SSE (/api/printers/events)
+
+services:
+  - type: web
+    name: 3d-print-tracker
+    env: node
+    plan: free          # free tier; spins down after 15 min inactivity
+    region: oregon      # change to: frankfurt, singapore, ohio, virginia
+    buildCommand: npm install && npm run build:cloud
+    startCommand: node server/index.js
+    healthCheckPath: /api/data
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false     # set this manually in the Render dashboard after deploy
+                        # value: your Supabase connection string (see .env.example)

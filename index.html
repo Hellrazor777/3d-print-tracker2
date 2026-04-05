@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>3D Print Tracker</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #e8e8e6;
+    --text: #1a1a1a; --text2: #666660; --text3: #999994;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18); --border3: rgba(0,0,0,0.28);
+    --info-bg: #e6f1fb; --info-text: #0c447c; --info-border: #b5d4f4;
+    --green: #639922; --green-bg: #eaf3de; --green-dark: #27500a; --green-border: #c0dd97;
+    --amber-bg: #faeeda; --amber-text: #633806;
+    --blue-bg: #e6f1fb; --blue-text: #0c447c;
+    --red-bg: #fcebeb; --red-text: #791f1f;
+    --radius: 8px; --radius-lg: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #f0ede8; --text2: #a8a49e; --text3: #6e6a65;
+      --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14); --border3: rgba(255,255,255,0.22);
+      --info-bg: #0c2a45; --info-text: #7bbfef; --info-border: #1a4a72;
+      --green: #7ab83a; --green-bg: #1a2e08; --green-dark: #a8d870; --green-border: #2e5010;
+      --amber-bg: #2e1e06; --amber-text: #f5c07a;
+      --blue-bg: #0c2038; --blue-text: #7bbfef;
+      --red-bg: #2e0c0c; --red-text: #f09595;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
+  .titlebar { -webkit-app-region: drag; height: 32px; background: var(--bg2); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
+  .titlebar-title { font-size: 13px; color: var(--text2); font-weight: 500; }
+  .main { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+  .topbar { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .topbar h1 { font-size: 18px; font-weight: 600; color: var(--text); flex: 1; }
+  .btn { background: transparent; border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 6px 14px; font-size: 13px; cursor: pointer; color: var(--text); font-family: inherit; transition: background .12s; }
+  .btn:hover { background: var(--bg2); }
+  .btn-primary { background: var(--info-bg); border-color: var(--info-border); color: var(--info-text); }
+  .btn-primary:hover { opacity: .85; }
+  .btn-success { background: var(--green-bg); border-color: var(--green-border); color: var(--green-dark); }
+  .btn-success:hover { opacity: .85; }
+  .view-toggle { display: flex; gap: 4px; flex-wrap: wrap; }
+  .view-btn { background: transparent; border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 6px 16px; font-size: 13px; cursor: pointer; color: var(--text2); font-family: inherit; font-weight: 500; transition: background .12s, color .12s, border-color .12s; }
+  .view-btn:hover { background: var(--bg2); }
+  #vb-product.active       { background: #E6F1FB; color: #0C447C; border-color: #85B7EB; }
+  #vb-archive.active       { background: #FAEEDA; color: #633806; border-color: #EF9F27; }
+  #vb-colours.active       { background: #EEEDFE; color: #3C3489; border-color: #AFA9EC; }
+  #vb-inventory.active     { background: #EAF3DE; color: #27500A; border-color: #97C459; }
+  #vb-product:hover:not(.active)   { border-color: #B5D4F4; }
+  #vb-archive:hover:not(.active)   { border-color: #FAC775; }
+  #vb-colours:hover:not(.active)   { border-color: #CECBF6; }
+  #vb-inventory:hover:not(.active) { border-color: #C0DD97; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
+  .stat { background: var(--bg2); border-radius: var(--radius); padding: 10px 14px; }
+  .stat-label { font-size: 11px; color: var(--text2); margin-bottom: 3px; }
+  .stat-val { font-size: 22px; font-weight: 600; color: var(--text); }
+  .filter-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .pill { padding: 4px 14px; font-size: 12px; border-radius: 99px; border: 0.5px solid var(--border); cursor: pointer; color: var(--text2); background: transparent; font-family: inherit; }
+  .pill.active { background: var(--bg); border-color: var(--border3); color: var(--text); font-weight: 500; }
+  /* PRODUCT VIEW */
+  .product-list { display: flex; flex-direction: column; gap: 12px; }
+  .product-card { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); overflow: hidden; }
+  .product-card.ready { border-color: var(--green); border-width: 1.5px; }
+  .product-header { display: flex; align-items: center; gap: 10px; padding: 14px 16px; cursor: pointer; user-select: none; }
+  .product-header:hover { background: var(--bg2); }
+  .product-title-wrap { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .product-title { font-size: 15px; font-weight: 600; color: var(--text); }
+  .rename-btn { background: transparent; border: none; cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--text3); opacity: 0; font-family: inherit; }
+  .product-header:hover .rename-btn { opacity: 1; }
+  .rename-btn:hover { background: var(--bg3); color: var(--text); }
+  .ready-badge { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; padding: 4px 12px; border-radius: 99px; background: var(--green-bg); color: var(--green-dark); white-space: nowrap; border: 0.5px solid var(--green-border); }
+  .ready-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .in-progress-badge { font-size: 11px; padding: 3px 10px; border-radius: 99px; background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); white-space: nowrap; }
+  .progress-bar-wrap { width: 90px; height: 6px; background: var(--bg3); border-radius: 99px; overflow: hidden; flex-shrink: 0; }
+  .progress-bar-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+  .progress-bar-fill.done { background: var(--green); }
+  .progress-bar-fill.going { background: #378add; }
+  .chevron { font-size: 11px; color: var(--text3); transition: transform .2s; flex-shrink: 0; }
+  .chevron.open { transform: rotate(90deg); }
+  .product-subheader { display: flex; gap: 6px; padding: 0 16px 10px; flex-wrap: wrap; align-items: center; }
+  .cat-tag { font-size: 11px; padding: 2px 10px; border-radius: 99px; background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); }
+  .parts-table { border-top: 0.5px solid var(--border); }
+  .part-row { display: grid; grid-template-columns: 1fr auto auto auto auto; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 0.5px solid var(--border); font-size: 13px; }
+  .part-row:last-child { border-bottom: none; }
+  .part-row-name { color: var(--text); font-weight: 500; }
+  .part-row-sub { font-size: 11px; color: var(--text2); font-weight: 400; }
+  .part-row-stl { font-size: 11px; color: var(--text3); }
+  .sp { font-size: 11px; padding: 2px 10px; border-radius: 99px; white-space: nowrap; }
+  .sp-planning { background: var(--bg3); color: var(--text2); }
+  .sp-queue { background: var(--amber-bg); color: var(--amber-text); }
+  .sp-printing { background: var(--blue-bg); color: var(--blue-text); }
+  .sp-done { background: var(--green-bg); color: var(--green-dark); }
+  .swatch { width: 13px; height: 13px; border-radius: 50%; flex-shrink: 0; display: inline-block; border: 0.5px solid rgba(0,0,0,.2); }
+  .colour-cell { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--text2); white-space: nowrap; }
+  .part-row-qty { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  .part-row-actions { display: flex; gap: 2px; }
+  .badge-3mf { font-size:10px;padding:2px 7px;border-radius:99px;background:#E6F1FB;color:#185FA5;border:0.5px solid #B5D4F4;white-space:nowrap;font-weight:500; }
+  .badge-shiny { font-size:10px;padding:2px 7px;border-radius:99px;background:#FAEEDA;color:#633806;border:0.5px solid #EF9F27;white-space:nowrap;font-weight:500; }
+  .product-icon { width:36px;height:36px;border-radius:6px;object-fit:cover;flex-shrink:0;border:0.5px solid var(--border); }
+  .product-icon-placeholder { width:36px;height:36px;border-radius:6px;background:var(--bg3);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;border:0.5px solid var(--border);cursor:pointer; }
+  .sub-row { display:grid; grid-template-columns:1fr auto auto auto; align-items:center; gap:10px; padding:7px 16px 7px 32px; border-bottom:0.5px solid var(--border); background:var(--bg2); font-size:12px; }
+  .sub-row:last-child { border-bottom:none; }
+  .sub-row-name { color:var(--text2); }
+  .editable-num { cursor:pointer; border-bottom:1px dashed var(--border2); min-width:20px; text-align:center; display:inline-block; }
+  .editable-num:hover { border-bottom-color:var(--border3); color:var(--text); }
+  .num-input { width:60px; font-size:inherit; font-family:inherit; background:var(--bg2); border:0.5px solid var(--border2); border-radius:var(--radius); padding:2px 6px; color:var(--text); text-align:center; outline:none; }
+  .icon-btn { background: transparent; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; font-size: 13px; color: var(--text3); font-family: inherit; }
+  .icon-btn:hover { background: var(--bg2); color: var(--text); }
+  /* KANBAN */
+  .columns { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
+  .col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .col-head span { font-size: 13px; font-weight: 500; color: var(--text2); }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; }
+  .bpl { background: var(--bg3); color: var(--text2); }
+  .bq { background: var(--amber-bg); color: var(--amber-text); }
+  .bp { background: var(--blue-bg); color: var(--blue-text); }
+  .bd { background: var(--green-bg); color: var(--green-dark); }
+  .drop-zone { min-height: 80px; border-radius: var(--radius); border: 1.5px dashed transparent; transition: border-color .15s, background .15s; }
+  .drop-zone.drag-over { border-color: var(--border3); background: var(--bg2); }
+  .card { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); padding: 14px; margin-bottom: 10px; cursor: grab; }
+  .card:hover { border-color: var(--border3); }
+  .card.dragging { opacity: .35; }
+  .card-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+  .card-sub { font-size: 12px; color: var(--text2); margin-bottom: 8px; }
+  .card-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 10px; }
+  .tag-stl { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--blue-bg); color: var(--blue-text); border: 0.5px solid var(--info-border); }
+  .colour-tag { display: flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px 2px 5px; border-radius: 99px; background: var(--bg2); color: var(--text2); border: 0.5px solid var(--border); }
+  .card-footer { display: flex; align-items: center; justify-content: space-between; }
+  .qty-ctrl { display: flex; align-items: center; gap: 6px; }
+  .qty-btn { width: 22px; height: 22px; border-radius: 50%; border: 0.5px solid var(--border2); background: transparent; cursor: pointer; font-size: 15px; display: flex; align-items: center; justify-content: center; color: var(--text); line-height: 1; font-family: inherit; }
+  .qty-btn:hover { background: var(--bg2); }
+  .qty-num { font-size: 13px; font-weight: 600; color: var(--text); min-width: 18px; text-align: center; }
+  .qty-label { font-size: 11px; color: var(--text2); }
+  .card-actions { display: flex; gap: 2px; }
+  .print-dots { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border); align-items: center; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--bg3); }
+  .dot.done { background: var(--green); }
+  .desc-text { font-size: 12px; color: var(--text2); margin-top: 8px; padding-top: 8px; border-top: 0.5px solid var(--border); line-height: 1.5; }
+  /* MODALS */
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius-lg); padding: 1.5rem; width: 360px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+  .modal h3 { font-size: 16px; font-weight: 600; margin-bottom: 1rem; color: var(--text); }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--text2); margin-bottom: 4px; }
+  .field input, .field select, .field textarea { width: 100%; font-family: inherit; font-size: 13px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 7px 10px; color: var(--text); outline: none; }
+  .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--border3); }
+  .field textarea { resize: vertical; min-height: 60px; }
+  .colour-row { display: flex; gap: 8px; align-items: center; }
+  .colour-row input[type=color] { width: 36px; height: 36px; padding: 2px; border-radius: 6px; border: 0.5px solid var(--border2); cursor: pointer; background: var(--bg2); }
+  .colour-row input[type=text] { flex: 1; }
+  .section-label { font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 8px; margin-top: 4px; }
+  .modal-footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 1rem; }
+  /* CONFLICT MODAL */
+  .conflict-modal { width: 420px; }
+  .conflict-step { font-size: 12px; color: var(--text2); margin-bottom: 10px; }
+  .conflict-step strong { color: var(--text); }
+  .conflict-name { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+  .conflict-desc { font-size: 13px; color: var(--text2); margin-bottom: 1.25rem; line-height: 1.5; }
+  .conflict-options { display: flex; flex-direction: column; gap: 8px; }
+  .conflict-option { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 0.5px solid var(--border2); border-radius: var(--radius); cursor: pointer; transition: border-color .15s, background .15s; }
+  .conflict-option:hover { border-color: var(--border3); background: var(--bg2); }
+  .conflict-option.selected { border-color: var(--info-border); background: var(--info-bg); }
+  .conflict-option-title { font-size: 13px; font-weight: 500; color: var(--text); }
+  .conflict-option-desc { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .conflict-option.selected .conflict-option-title { color: var(--info-text); }
+  .conflict-option.selected .conflict-option-desc { color: var(--info-text); opacity: .8; }
+  /* IMPORT STATUS */
+  .import-status { font-size: 12px; padding: 8px 10px; border-radius: var(--radius); margin-top: 8px; }
+  .import-status.ok { background: var(--green-bg); color: var(--green-dark); }
+  .import-status.err { background: var(--red-bg); color: var(--red-text); }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .preview-table th { text-align: left; padding: 4px 8px; color: var(--text2); border-bottom: 0.5px solid var(--border); font-weight: 500; }
+  .preview-table td { padding: 4px 8px; border-bottom: 0.5px solid var(--border); color: var(--text); }
+  .preview-table tr:last-child td { border-bottom: none; }
+  @media (max-width: 700px) { .columns { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } .part-row { grid-template-columns: 1fr auto auto; } }
+</style>
+</head>
+<body>
+
+<div class="titlebar"><span class="titlebar-title">3D Print Tracker</span></div>
+
+<div class="main">
+  <div class="topbar">
+    <h1>3D Print Tracker</h1>
+    <div class="view-toggle">
+      <button class="view-btn active" id="vb-product" onclick="setView('product')">Products</button>
+      <button class="view-btn" id="vb-archive" onclick="setView('archive')">Archive</button>
+      <button class="view-btn" id="vb-colours" onclick="setView('colours')">Colour</button>
+      <button class="view-btn" id="vb-inventory" onclick="setView('inventory')">Inventory</button>
+    </div>
+    <button class="btn" onclick="openSettings()" title="settings">⚙ settings</button>
+    <button class="btn" onclick="openN3D()" style="border-color:#7f77dd;color:#3c3489">N3D browse</button>
+    <button class="btn" onclick="doImport()">↑ import CSV</button>
+    <button class="btn" onclick="doExport()">↓ export CSV</button>
+    <button class="btn" onclick="openAddProduct()">+ add product</button>
+  </div>
+  <div class="stats" id="stats"></div>
+  <div id="view-product"></div>
+  <div id="product-filter-bar" style="display:none;gap:6px;margin-bottom:12px;flex-wrap:wrap;align-items:center"></div>
+  <div id="view-archive" style="display:none"></div>
+  <div id="view-colours" style="display:none"></div>
+  <div id="view-inventory" style="display:none"></div>
+
+</div>
+
+<!-- add product modal -->
+<div id="add-product-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeAddProduct()">
+    <div class="modal" style="width:360px">
+      <h3>add product</h3>
+      <div class="field"><label>product name *</label><input id="ap-name" placeholder="e.g. Pikachu V3"/></div>
+      <div class="field"><label>category</label><input id="ap-cat" placeholder="e.g. character, standard"/></div>
+      <div class="field"><label>description</label><textarea id="ap-desc" placeholder="notes about this product..." style="min-height:60px"></textarea></div>
+      <div class="field" style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="ap-shiny" style="width:18px;height:18px;cursor:pointer"/>
+        <label for="ap-shiny" style="margin-bottom:0;cursor:pointer;font-size:14px">✨ shiny variant</label>
+      </div>
+      <div class="field"><label>designer</label><input id="ap-designer" placeholder="e.g. N3D Melbourne"/></div>
+      <div class="field"><label>source</label>
+        <select id="ap-source">
+          <option value="">— select source —</option>
+          <option value="patreon">Patreon</option>
+          <option value="thangs">Thangs</option>
+          <option value="makersworld">MakersWorld</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>product image</label>
+        <div id="ap-img-preview" style="margin-bottom:8px;display:none">
+          <img id="ap-img-el" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:0.5px solid var(--border2)" src=""/>
+        </div>
+        <button class="btn" onclick="apUploadImage()" style="width:100%">upload image</button>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeAddProduct()">cancel</button>
+        <button class="btn btn-primary" onclick="saveAddProduct()">create product</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- settings modal -->
+<div id="settings-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeSettings()">
+    <div class="modal" style="width:420px">
+      <h3>settings</h3>
+      <div class="section-label">3MF files</div>
+      <div class="field">
+        <label>root 3MF folder</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="s-3mf-folder" readonly placeholder="no folder selected" style="flex:1;font-size:12px;font-family:var(--font-mono)"/>
+          <button class="btn" onclick="pick3mfFolder()">browse</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>default slicer</label>
+        <select id="s-slicer">
+          <option value="bambu">Bambu Studio</option>
+          <option value="orca">Orca Slicer</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Bambu Studio path (optional — leave blank for default)</label>
+        <input id="s-bambu-path" placeholder="C:\Program Files\Bambu Studioambu-studio.exe"/>
+      </div>
+      <div class="field">
+        <label>Orca Slicer path (optional — leave blank for default)</label>
+        <input id="s-orca-path" placeholder="C:\Program Files\OrcaSlicer\orca-slicer.exe"/>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeSettings()">cancel</button>
+        <button class="btn btn-primary" onclick="saveSettingsModal()">save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- sub-part name modal -->
+<div id="subpart-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeSubpartModal()">
+    <div class="modal" style="width:300px">
+      <h3>add sub-part</h3>
+      <div class="field">
+        <label>sub-part name</label>
+        <input id="subpart-name-input" placeholder="e.g. left claw, piece 2" onkeydown="if(event.key==='Enter')saveSubPart()"/>
+      </div>
+      <div class="field">
+        <label>quantity</label>
+        <input id="subpart-qty-input" type="number" min="1" value="1"/>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeSubpartModal()">cancel</button>
+        <button class="btn btn-primary" onclick="saveSubPart()">add</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- status change modal -->
+<div id="status-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeStatusModal()">
+    <div class="modal" style="width:300px">
+      <h3 id="status-modal-title">change status</h3>
+      <div id="status-modal-body"></div>
+    </div>
+  </div>
+</div>
+
+<!-- completion modal -->
+<div id="completion-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeCompletionModal()">
+    <div class="modal" style="width:340px">
+      <h3>all parts printed!</h3>
+      <p style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.5">How many completed builds are you adding to inventory? The product will be archived after this.</p>
+      <div class="field">
+        <label>quantity built</label>
+        <div style="display:flex;align-items:center;gap:0;margin-top:4px">
+          <button class="qty-btn" onclick="adjustCompletionQty(-1)">−</button>
+          <div id="completion-qty-val" style="width:60px;height:36px;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:600;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2)">1</div>
+          <button class="qty-btn" onclick="adjustCompletionQty(1)">+</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" onclick="closeCompletionModal()">cancel</button>
+        <button class="btn btn-success" onclick="confirmCompletion()">add to inventory &amp; archive</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- part modal -->
+<div id="modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeModal()">
+    <div class="modal">
+      <h3 id="modal-title">add part</h3>
+      <div class="section-label">part info</div>
+      <div class="field"><label>part name *</label><input id="f-name" placeholder="e.g. motor mount bracket"/></div>
+      <div class="field"><label>product it belongs to</label><input id="f-item" placeholder="e.g. Robot Arm" list="item-list"/><datalist id="item-list"></datalist></div>
+      <div class="field"><label>variant / sub-part</label><input id="f-variant" placeholder="e.g. left side, v2"/></div>
+      <div class="section-label">print settings</div>
+      <div class="field">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label style="margin-bottom:0">filament colours</label>
+          <button type="button" class="btn" style="padding:2px 10px;font-size:12px" onclick="addColourRow()">+ add colour</button>
+        </div>
+        <div id="colour-rows"></div>
+      </div>
+      <div class="field"><label>quantity needed</label><input id="f-qty" type="number" min="1" value="1"/></div>
+      <div class="field"><label>status</label><select id="f-status"><option value="planning">planning</option><option value="queue">queue</option><option value="printing">printing</option><option value="done">done</option></select></div>
+      <div class="modal-footer"><button class="btn" onclick="closeModal()">cancel</button><button class="btn btn-primary" onclick="saveCard()">save</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- rename modal -->
+<div id="rename-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeRename()">
+    <div class="modal" style="width:300px">
+      <h3>rename product</h3>
+      <div class="field"><label>product name</label><input id="rename-input"/></div>
+      <div class="field"><label>category</label><input id="rename-cat" placeholder="e.g. RC Car, Home, Gift" list="cat-list"/><datalist id="cat-list"></datalist></div>
+      <div class="field"><label>description</label><textarea id="rename-desc" placeholder="notes about this product..." style="min-height:60px"></textarea></div>
+      <div class="field" style="display:flex;align-items:center;gap:10px">
+        <input type="checkbox" id="rename-shiny" style="width:18px;height:18px;cursor:pointer"/>
+        <label for="rename-shiny" style="margin-bottom:0;cursor:pointer;font-size:14px">✨ shiny variant</label>
+      </div>
+      <div class="field"><label>N3D website URL (optional)</label><input id="rename-n3durl" placeholder="https://www.n3dmelbourne.com/designs/..."/></div>
+      <div class="field"><label>designer</label><input id="rename-designer" placeholder="e.g. N3D Melbourne"/></div>
+      <div class="field"><label>source</label>
+        <select id="rename-source">
+          <option value="">— select source —</option>
+          <option value="patreon">Patreon</option>
+          <option value="thangs">Thangs</option>
+          <option value="makersworld">MakersWorld</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="modal-footer"><button class="btn" onclick="closeRename()">cancel</button><button class="btn btn-primary" onclick="saveRename()">save</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- import preview modal -->
+<div id="import-modal" style="display:none">
+  <div class="modal-bg" onclick="if(event.target===this)closeImportModal()">
+    <div class="modal" style="width:480px">
+      <h3>import preview</h3>
+      <div id="import-status"></div>
+      <div id="preview-wrap" style="margin-top:12px;display:none">
+        <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="preview-label"></div>
+        <div style="overflow-x:auto"><table class="preview-table" id="preview-table"></table></div>
+      </div>
+      <div class="modal-footer"><button class="btn" onclick="closeImportModal()">cancel</button><button class="btn btn-primary" id="import-confirm-btn" style="display:none" onclick="startConflictFlow()">import</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- conflict modal -->
+<div id="conflict-modal" style="display:none">
+  <div class="modal-bg">
+    <div class="modal conflict-modal">
+      <h3>product already exists</h3>
+      <div class="conflict-step" id="conflict-step"></div>
+      <div class="conflict-name" id="conflict-name"></div>
+      <div class="conflict-desc" id="conflict-desc"></div>
+      <div class="conflict-options">
+        <div class="conflict-option selected" id="copt-add" onclick="selectConflictOpt('add')">
+          <div><div class="conflict-option-title">add to existing product</div><div class="conflict-option-desc">new parts will join the parts already in this product</div></div>
+        </div>
+        <div class="conflict-option" id="copt-new" onclick="selectConflictOpt('new')">
+          <div><div class="conflict-option-title">create new product</div><div class="conflict-option-desc">imported parts go into a separate product with a new name</div></div>
+        </div>
+      </div>
+      <div class="modal-footer"><button class="btn btn-primary" onclick="resolveConflict()">confirm</button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Storage: use Electron file API, fall back to localStorage ──
+const isElectron = !!window.electronAPI;
+
+async function loadData() {
+  if (isElectron) return await window.electronAPI.loadData();
+  try { return JSON.parse(localStorage.getItem('3dp_data')); } catch(e) { return null; }
+}
+async function saveData(data) {
+  if (isElectron) return await window.electronAPI.saveData(data);
+  localStorage.setItem('3dp_data', JSON.stringify(data));
+}
+
+// ── State ──
+let parts = [], products = {}, inventory = [], nextId = 1;
+let editId = null, renameTarget = null, activeFilter = 'all', dragId = null, currentView = 'product';
+let openProducts = new Set();
+let pendingRows = [], conflictQueue = [], conflictDecisions = {}, selectedConflictOpt = 'add';
+let invExpanded = new Set();
+let invLogQty = {}, invLogDest = {};
+let catExpanded = new Set();
+let sliceFilter = 'all'; // 'all' | 'sliced' | 'unsliced' 
+let appSettings = { threeMfFolder: '', slicer: 'bambu', bambuPath: '', orcaPath: '' };
+
+async function init() {
+  const saved = await loadData();
+  if (saved) {
+    parts = saved.parts || [];
+    products = saved.products || {};
+    inventory = saved.inventory || [];
+    nextId = parts.length ? Math.max(...parts.map(p=>p.id)) + 1 : 1;
+    const savedCats = saved.expandedCats || [];
+    savedCats.forEach(c => catExpanded.add(c));
+  } else {
+    // default sample data
+    parts = [
+      {id:1,name:'Base plate',item:'Robot Arm',variant:'',desc:'Main structural base',colour:'#4a90d9',colourName:'Blue',stl:'base_plate_v2.stl',qty:1,printed:1,status:'done',reprints:0},
+      {id:2,name:'Servo horn',item:'Robot Arm',variant:'x4 set',desc:'Attaches servo to linkage',colour:'#ffffff',colourName:'White',stl:'servo_horn.stl',qty:4,printed:4,status:'done',reprints:1},
+      {id:3,name:'Elbow joint',item:'Robot Arm',variant:'',desc:'Pivot between arm segments',colour:'#4a90d9',colourName:'Blue',stl:'elbow_v3.stl',qty:1,printed:0,status:'printing',reprints:0},
+      {id:4,name:'Gripper finger',item:'Robot Arm',variant:'left',desc:'Flexible gripper jaw',colour:'#e63946',colourName:'Red',stl:'finger_left.stl',qty:1,printed:0,status:'queue',reprints:0},
+      {id:5,name:'Gripper finger',item:'Robot Arm',variant:'right',desc:'Mirror of left finger',colour:'#e63946',colourName:'Red',stl:'finger_right.stl',qty:1,printed:0,status:'queue',reprints:0},
+      {id:6,name:'Bottom shell',item:'Pi 5 Case',variant:'',desc:'Houses Pi board and IO',colour:'#2d2d2d',colourName:'Galaxy Black',stl:'pi5_base.stl',qty:1,printed:1,status:'done',reprints:0},
+      {id:7,name:'Lid',item:'Pi 5 Case',variant:'with vent',desc:'Top cover with ventilation',colour:'#2d2d2d',colourName:'Galaxy Black',stl:'pi5_lid_vent.stl',qty:1,printed:1,status:'done',reprints:0},
+    ];
+    products = {'Robot Arm':{category:'Robotics'},'Pi 5 Case':{category:'Home'}};
+    nextId = 8;
+  }
+  getItems().forEach(i => openProducts.add(i));
+  // Load settings
+  if (window.electronAPI && window.electronAPI.loadSettings) {
+    const s = await window.electronAPI.loadSettings();
+    if (s) appSettings = { ...appSettings, ...s };
+  }
+  render();
+}
+
+async function persist() {
+  await saveData({ parts, products, inventory, expandedCats: [...catExpanded] });
+}
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function syncColourPick(v) { if (/^#[0-9a-f]{6}$/i.test(v)) document.getElementById('f-colour-pick').value = v; }
+
+function resetColourRows(cols) {
+  const wrap = document.getElementById('colour-rows');
+  wrap.innerHTML = '';
+  (cols.length ? cols : [{hex:'#4a90d9',name:''}]).forEach(c => addColourRow(c));
+}
+function addColourRow(c) {
+  const wrap = document.getElementById('colour-rows');
+  const hex = (c&&c.hex) ? c.hex : '#4a90d9';
+  const name = (c&&c.name) ? c.name : '';
+  const row = document.createElement('div');
+  row.className = 'colour-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `<input type="color" value="${hex}" style="width:36px;height:36px;padding:2px;border-radius:6px;border:0.5px solid var(--border2);cursor:pointer;background:var(--bg2);flex-shrink:0" oninput="this.nextElementSibling.value=this.value"/>
+    <input type="text" value="${esc(name)}" placeholder="e.g. Galaxy Black, Sakura Pink" style="flex:1;font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;outline:none" oninput="if(/^#[0-9a-f]{6}$/i.test(this.value))this.previousElementSibling.value=this.value"/>
+    <button type="button" onclick="if(document.getElementById('colour-rows').children.length>1)this.parentElement.remove()" style="background:transparent;border:none;cursor:pointer;padding:4px 6px;border-radius:4px;font-size:15px;color:var(--text3);font-family:inherit" title="remove">&#x2715;</button>`;
+  wrap.appendChild(row);
+}
+function getColourRows() {
+  return [...document.getElementById('colour-rows').children].map(row => {
+    const inputs = row.querySelectorAll('input');
+    return { hex: inputs[0].value, name: inputs[1].value.trim() };
+  }).filter(c => c.hex);
+}
+function getItems() {
+  const fromParts = parts.map(p => p.item).filter(Boolean);
+  const fromProducts = Object.keys(products);
+  return [...new Set([...fromParts, ...fromProducts])];
+}
+function getCategories() { return [...new Set(Object.values(products).map(p=>p.category).filter(Boolean))]; }
+function isReady(item) { const ps=parts.filter(p=>p.item===item); return ps.length>0&&ps.every(p=>p.status==='done'); }
+function setView(v) {
+  currentView=v;
+  document.getElementById('view-product').style.display=v==='product'?'':'none';
+  document.getElementById('product-filter-bar').style.display=v==='product'?'flex':'none';
+  document.getElementById('view-archive').style.display=v==='archive'?'':'none';
+  document.getElementById('view-colours').style.display=v==='colours'?'':'none';
+  document.getElementById('view-inventory').style.display=v==='inventory'?'':'none';
+  document.getElementById('vb-product').classList.toggle('active',v==='product');
+  document.getElementById('vb-archive').classList.toggle('active',v==='archive');
+  document.getElementById('vb-colours').classList.toggle('active',v==='colours');
+  document.getElementById('vb-inventory').classList.toggle('active',v==='inventory');
+  render();
+}
+function setFilter(f,el) { activeFilter=f; document.querySelectorAll('.pill').forEach(p=>p.classList.remove('active')); el.classList.add('active'); render(); }
+function render() { updateDatalist(); renderStats(); if(currentView==='product') renderProductView(); else if(currentView==='archive') renderArchiveView(); else if(currentView==='colours') renderColourView(); else renderInventoryView(); }
+
+function updateDatalist() {
+  const dl=document.getElementById('item-list'); if(dl){ dl.innerHTML=''; getItems().forEach(it=>{ const o=document.createElement('option');o.value=it;dl.appendChild(o); }); }
+  const cl=document.getElementById('cat-list'); if(cl){ cl.innerHTML=''; getCategories().forEach(c=>{ const o=document.createElement('option');o.value=c;cl.appendChild(o); }); }
+}
+
+function renderStats() {
+  const items=getItems().filter(i=>!products[i]?.archived), readyN=items.filter(i=>isReady(i)).length;
+  const tp=parts.reduce((a,p)=>a+p.printed,0), tn=parts.reduce((a,p)=>a+p.qty,0);
+  const archivedN = Object.values(products).filter(p=>p.archived).length;
+  document.getElementById('stats').innerHTML=`
+    <div class="stat"><div class="stat-label">active products</div><div class="stat-val">${items.length}</div></div>
+    <div class="stat"><div class="stat-label">parts tracked</div><div class="stat-val">${parts.length}</div></div>
+    <div class="stat"><div class="stat-label">pieces printed</div><div class="stat-val">${tp}/${tn}</div></div>
+    <div class="stat"><div class="stat-label">ready to build</div><div class="stat-val" style="color:var(--green)">${readyN}</div></div>`;
+}
+
+function renderProductView() {
+  const container = document.getElementById('view-product');
+  const items = getItems().filter(i => !products[i]?.archived);
+  items.forEach(it=>{ if(!products[it]) products[it]={category:''}; });
+
+  // Separate in-progress (printing/ready to build) from others
+  // Apply 3MF filter
+  const filteredItems = sliceFilter === 'presliced' ? items.filter(i => productHas3mf(i) && products[i]?.preSliced)
+    : sliceFilter === 'sliced' ? items.filter(i => productHas3mf(i))
+    : sliceFilter === 'unsliced' ? items.filter(i => !productHas3mf(i))
+    : items;
+
+  const inProgressItems = filteredItems.filter(item => {
+    const ps = parts.filter(p=>p.item===item);
+    return ps.some(p=>p.status==='printing') || isReady(item);
+  });
+  const otherItems = filteredItems.filter(i => !inProgressItems.includes(i));
+
+  // Group other items by category
+  const cats = {};
+  otherItems.forEach(item => {
+    const cat = products[item]?.category || 'uncategorised';
+    if (!cats[cat]) cats[cat] = [];
+    cats[cat].push(item);
+  });
+
+  container.innerHTML = '';
+
+  // ── Render filter bar ──
+  const filterBar = document.getElementById('product-filter-bar');
+  if (filterBar) {
+    filterBar.innerHTML = '';
+    const filters = [
+      { val: 'all', label: 'all products' },
+      { val: 'presliced', label: '✓ pre-sliced' },
+      { val: 'sliced', label: '3MF attached' },
+      { val: 'unsliced', label: '✗ no 3MF' },
+    ];
+    filters.forEach(f => {
+      const btn = document.createElement('button');
+      btn.className = 'pill' + (sliceFilter === f.val ? ' active' : '');
+      btn.textContent = f.label;
+      btn.addEventListener('click', () => { sliceFilter = f.val; renderProductView(); });
+      filterBar.appendChild(btn);
+    });
+    // Stats
+    const allItems2 = getItems().filter(i => !products[i]?.archived);
+    const slicedCount = allItems2.filter(i => productHas3mf(i)).length;
+    const preSlicedCount = allItems2.filter(i => productHas3mf(i) && products[i]?.preSliced).length;
+    const info = document.createElement('span');
+    info.style.cssText = 'font-size:12px;color:var(--text2);margin-left:4px';
+    info.textContent = preSlicedCount + ' pre-sliced · ' + slicedCount + '/' + allItems2.length + ' have 3MF';
+    filterBar.appendChild(info);
+  }
+
+  // ── In progress section ──
+  if (inProgressItems.length) {
+    const sec = buildSection('in progress', inProgressItems, 'var(--blue-text)', true);
+    container.appendChild(sec);
+  }
+
+  // ── Category sections ──
+  const sortedCats = Object.keys(cats).sort((a,b) => a==='uncategorised'?1:b==='uncategorised'?-1:a.localeCompare(b));
+  sortedCats.forEach(cat => {
+    const sec = buildSection(cat, cats[cat].sort((a,b)=>a.localeCompare(b)), null, false);
+    container.appendChild(sec);
+  });
+
+  if (!inProgressItems.length && !otherItems.length) {
+    container.innerHTML = '<p style="color:var(--text2);padding:1rem 0">no parts yet — add a product to get started.</p>';
+  }
+}
+
+function buildSection(title, itemList, titleColor, forceOpen) {
+  const isOpen = catExpanded.has(title) || forceOpen;
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'margin-bottom:16px';
+
+  // Section header
+  const hdr = document.createElement('div');
+  hdr.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 4px;cursor:pointer;user-select:none;margin-bottom:8px;border-bottom:0.5px solid var(--border)';
+  const chevron = document.createElement('span');
+  chevron.className = 'chevron' + (isOpen?' open':'');
+  chevron.textContent = '▶';
+  chevron.style.cssText = 'font-size:10px;color:var(--text3)';
+  const label = document.createElement('span');
+  label.style.cssText = 'font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:'+(titleColor||'var(--text2)');
+  label.textContent = title;
+  const count = document.createElement('span');
+  count.style.cssText = 'font-size:11px;color:var(--text3);margin-left:2px';
+  count.textContent = '(' + itemList.length + ')';
+  hdr.appendChild(chevron); hdr.appendChild(label); hdr.appendChild(count);
+  hdr.addEventListener('click', () => {
+    if (catExpanded.has(title)) catExpanded.delete(title); else catExpanded.add(title);
+    saveCatState();
+    renderProductView();
+  });
+  wrap.appendChild(hdr);
+
+  // Product cards
+  const list = document.createElement('div');
+  list.className = 'product-list';
+  list.style.display = isOpen ? '' : 'none';
+
+  itemList.forEach(item => {
+    const ps = parts.filter(p=>p.item===item);
+    const tp = ps.reduce((a,p)=>a+p.qty,0), dp = ps.reduce((a,p)=>a+p.printed,0);
+    const pct = tp>0?Math.round(dp/tp*100):0;
+    const ready = isReady(item), isOpen2 = openProducts.has(item);
+    const cat = products[item]?.category||'';
+    const planN = ps.filter(p=>p.status==='planning').length;
+    const qN = ps.filter(p=>p.status==='queue').length;
+    const prN = ps.filter(p=>p.status==='printing').length;
+    const dN = ps.filter(p=>p.status==='done').length;
+
+    const card = document.createElement('div');
+    card.className = 'product-card' + (ready?' ready':'');
+
+    const header = document.createElement('div');
+    header.className = 'product-header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'product-title-wrap';
+
+    const iconPath = products[item]?.imagePath;
+    if (iconPath) {
+      const img = document.createElement('img');
+      img.className = 'product-icon';
+      img.src = 'file://' + iconPath;
+      img.onerror = () => img.style.display = 'none';
+      titleWrap.appendChild(img);
+    } else {
+      const ph = document.createElement('div');
+      ph.className = 'product-icon-placeholder';
+      ph.title = 'click to add image'; ph.textContent = '🖼'; ph.style.fontSize = '16px';
+      ph.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); uploadProductImage(n); }; })(item));
+      titleWrap.appendChild(ph);
+    }
+
+    const titleSpan = document.createElement('span');
+    titleSpan.className = 'product-title'; titleSpan.textContent = item;
+    const renameBtn = document.createElement('button');
+    renameBtn.className = 'rename-btn'; renameBtn.textContent = '✎ rename';
+    renameBtn.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); openRename(n); }; })(item));
+    const archiveBtn = document.createElement('button');
+    archiveBtn.className = 'rename-btn'; archiveBtn.style.color = 'var(--amber-text)'; archiveBtn.title = 'move to archive'; archiveBtn.textContent = '↓ archive';
+    archiveBtn.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); archiveProduct(n); }; })(item));
+    const folderBtn = document.createElement('button');
+    folderBtn.className = 'rename-btn'; folderBtn.title = 'open product folder'; folderBtn.textContent = '🗂 folder'; folderBtn.style.fontSize = '12px';
+    folderBtn.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); openProductFolder(n); }; })(item));
+    const slicerBtn = document.createElement('button');
+    slicerBtn.className = 'rename-btn'; slicerBtn.title = 'open in slicer'; slicerBtn.textContent = '▶ slicer'; slicerBtn.style.fontSize = '12px';
+    slicerBtn.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); openProductInSlicer(n); }; })(item));
+
+    // Upload 3MF button
+    const uploadBtn = document.createElement('button');
+    uploadBtn.className = 'rename-btn'; uploadBtn.title = 'upload 3MF file'; uploadBtn.textContent = '↑ 3MF'; uploadBtn.style.fontSize = '12px';
+    uploadBtn.addEventListener('click', (function(n){ return function(e){ e.stopPropagation(); uploadProduct3mf(n); }; })(item));
+
+    titleWrap.appendChild(titleSpan); titleWrap.appendChild(renameBtn); titleWrap.appendChild(archiveBtn); titleWrap.appendChild(folderBtn); titleWrap.appendChild(slicerBtn); titleWrap.appendChild(uploadBtn);
+
+    // N3D website link button
+    if (products[item]?.n3dUrl) {
+      const n3dLinkBtn = document.createElement('button');
+      n3dLinkBtn.className = 'rename-btn';
+      n3dLinkBtn.title = 'view on N3D Melbourne';
+      n3dLinkBtn.textContent = '🌐 website';
+      n3dLinkBtn.style.cssText = 'font-size:12px;color:#3C3489';
+      n3dLinkBtn.addEventListener('click', (function(url){ return function(e){
+        e.stopPropagation();
+        if (window.electronAPI && window.electronAPI.openExternal) window.electronAPI.openExternal(url);
+        else window.open(url, '_blank');
+      };})(products[item].n3dUrl));
+      titleWrap.appendChild(n3dLinkBtn);
+    }
+
+    // Title wrap + badges
+    header.appendChild(titleWrap);
+    if (productHas3mf(item)) {
+      const badge3mf = document.createElement('span');
+      const isPreSliced = products[item]?.preSliced;
+      badge3mf.className = 'badge-3mf';
+      if (isPreSliced) {
+        badge3mf.style.cssText = 'background:#EAF3DE;color:#27500A;border-color:#97C459';
+        badge3mf.textContent = '✓ 3MF · ' + products[item].threeMfFiles.length;
+        badge3mf.title = 'Pre-sliced & ready to print: ' + products[item].threeMfFiles.join(', ');
+      } else {
+        badge3mf.textContent = '3MF · ' + products[item].threeMfFiles.length;
+        badge3mf.title = products[item].threeMfFiles.join(', ');
+      }
+      header.appendChild(badge3mf);
+    }
+    if (products[item]?.shiny) {
+      const badgeShiny = document.createElement('span');
+      badgeShiny.className = 'badge-shiny';
+      badgeShiny.textContent = '✨ shiny';
+      header.appendChild(badgeShiny);
+    }
+
+    if (ready) {
+      const readyBadge = document.createElement('span');
+      readyBadge.className = 'ready-badge'; readyBadge.style.cursor = 'pointer';
+      readyBadge.title = 'click to mark as done and add to inventory';
+      readyBadge.innerHTML = '<span class="ready-dot"></span>ready to build — click when done';
+      readyBadge.addEventListener('click', (function(n){ return function(e){
+        e.stopPropagation();
+        completionProductName = n; completionQty = 1;
+        document.getElementById('completion-qty-val').textContent = '1';
+        document.getElementById('completion-modal').style.display = '';
+      }; })(item));
+      header.appendChild(readyBadge);
+    } else {
+      const progBadge = document.createElement('span');
+      progBadge.className = 'in-progress-badge';
+      progBadge.textContent = dp + '/' + tp + ' pcs · ' + pct + '%';
+      const badgeWrap = document.createElement('div');
+      badgeWrap.style.cssText = 'display:flex;gap:5px';
+      if (planN) { const b=document.createElement('span'); b.className='badge bpl'; b.textContent=planN; badgeWrap.appendChild(b); }
+      if (qN) { const b=document.createElement('span'); b.className='badge bq'; b.textContent=qN; badgeWrap.appendChild(b); }
+      if (prN) { const b=document.createElement('span'); b.className='badge bp'; b.textContent=prN; badgeWrap.appendChild(b); }
+      if (dN) { const b=document.createElement('span'); b.className='badge bd'; b.textContent=dN; badgeWrap.appendChild(b); }
+      header.appendChild(progBadge); header.appendChild(badgeWrap);
+    }
+
+    const progWrap = document.createElement('div'); progWrap.className = 'progress-bar-wrap';
+    const progFill = document.createElement('div'); progFill.className = 'progress-bar-fill '+(ready?'done':'going'); progFill.style.width = pct+'%';
+    progWrap.appendChild(progFill); header.appendChild(progWrap);
+    const chevron2 = document.createElement('span'); chevron2.className = 'chevron'+(isOpen2?' open':''); chevron2.textContent = '▶';
+    header.appendChild(chevron2);
+    header.addEventListener('click', (function(n){ return function(){ toggleProduct(n); }; })(item));
+    card.appendChild(header);
+
+    const desc = products[item]?.description||'';
+    if (cat || isOpen2 || desc) {
+      const sub = document.createElement('div'); sub.className = 'product-subheader';
+      if (cat) { const t=document.createElement('span'); t.className='cat-tag'; t.textContent=cat; sub.appendChild(t); }
+      if (products[item]?.source) { const t=document.createElement('span'); t.className='cat-tag'; t.textContent=products[item].source; sub.appendChild(t); }
+      if (products[item]?.designer) { const t=document.createElement('span'); t.style.cssText='font-size:12px;color:var(--text2)'; t.textContent='by ' + products[item].designer; sub.appendChild(t); }
+      if (desc) { const t=document.createElement('span'); t.style.cssText='font-size:12px;color:var(--text2);font-style:italic'; t.textContent=desc; sub.appendChild(t); }
+      if (!ready && isOpen2) { const t=document.createElement('span'); t.style.cssText='font-size:11px;color:var(--text2)'; t.textContent=ps.filter(p=>p.status!=='done').length+' part'+(ps.filter(p=>p.status!=='done').length!==1?'s':'')+' left'; sub.appendChild(t); }
+      if (ready) { const t=document.createElement('span'); t.style.cssText='font-size:11px;color:var(--green-dark)'; t.textContent='all '+tp+' pieces printed'; sub.appendChild(t); }
+      card.appendChild(sub);
+    }
+
+    if (isOpen2) {
+      const table = document.createElement('div'); table.className = 'parts-table';
+      ps.forEach(p => {
+        const colours = p.colours&&p.colours.length ? p.colours : (p.colour?[{hex:p.colour,name:p.colourName||''}]:[]);
+        const hasSubParts = p.subParts && p.subParts.length > 0;
+        const displayPrinted = hasSubParts ? p.subParts.filter(s=>s.status==='done').length : p.printed;
+        const displayQty = hasSubParts ? p.subParts.length : p.qty;
+
+        const row = document.createElement('div'); row.className = 'part-row';
+        row.innerHTML =
+          '<div><div class="part-row-name">' + esc(p.name) + (p.variant?'<span class="part-row-sub"> ('+esc(p.variant)+')</span>':'') + '</div>' + (p.stl?'<div class="part-row-stl">'+esc(p.stl)+'</div>':'') + '</div>' +
+          '<div class="colour-cell" style="gap:3px;flex-wrap:wrap">' + colours.filter(c=>c&&c.hex).map(c=>'<span class="swatch" style="background:'+c.hex+'" title="'+esc(c.name||'')+'"></span>').join('') + '<span style="font-size:11px;color:var(--text2)">' + colours.filter(c=>c&&c.hex).map(c=>esc(c.name||'')).filter(Boolean).join(', ') + '</span></div>' +
+          '<span class="part-row-qty" style="cursor:pointer;border-bottom:1px dashed var(--border2)" title="click to edit qty" data-partid="' + p.id + '">' + displayPrinted + '/' + displayQty + '</span>' +
+          '<span class="sp sp-' + p.status + '" style="cursor:pointer" title="click to change status">' + p.status + '</span>';
+        const actions = document.createElement('div'); actions.className = 'part-row-actions';
+        if (p.status==='done') { const rb=document.createElement('button'); rb.className='icon-btn'; rb.title='reprint'; rb.textContent='↺'; rb.addEventListener('click',(function(id){return function(){reprint(id);};})(p.id)); actions.appendChild(rb); }
+        const spEl = row.querySelector('.sp');
+        if (spEl) spEl.addEventListener('click',(function(id){return function(e){e.stopPropagation();openStatusModal(id);};})(p.id));
+        const qtyEl = row.querySelector('.part-row-qty');
+        if (qtyEl) qtyEl.addEventListener('click',(function(id,p){return function(e){
+          e.stopPropagation();
+          const input=document.createElement('input');
+          input.type='number'; input.min='1'; input.value=p.qty;
+          input.style.cssText='width:50px;font-size:12px;font-family:inherit;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:2px 4px;color:var(--text);text-align:center;outline:none';
+          qtyEl.replaceWith(input); input.focus(); input.select();
+          const finish=async()=>{
+            const v=parseInt(input.value)||1;
+            const part=parts.find(x=>x.id===id);
+            if(part){ part.qty=Math.max(1,v); if(part.printed>part.qty) part.printed=part.qty; await persist(); render(); }
+          };
+          input.addEventListener('blur',finish);
+          input.addEventListener('keydown',e2=>{if(e2.key==='Enter')finish();if(e2.key==='Escape')render();});
+        };})(p.id,p));
+        const addSub=document.createElement('button'); addSub.className='icon-btn'; addSub.title='add sub-part'; addSub.textContent='+';
+        addSub.addEventListener('click',(function(id){return function(e){e.stopPropagation();addSubPart(id);};})(p.id));
+        const eb=document.createElement('button'); eb.className='icon-btn'; eb.title='edit'; eb.textContent='✎';
+        eb.addEventListener('click',(function(id){return function(){openEdit(id);};})(p.id));
+        const db=document.createElement('button'); db.className='icon-btn'; db.title='delete'; db.textContent='✕';
+        db.addEventListener('click',(function(id){return function(){del(id);};})(p.id));
+        actions.appendChild(addSub); actions.appendChild(eb); actions.appendChild(db);
+        row.appendChild(actions); table.appendChild(row);
+
+        if (hasSubParts) {
+          p.subParts.forEach((sp, si) => {
+            const subRow = document.createElement('div'); subRow.className = 'sub-row';
+            const spPrinted = sp.printed||0, spQty = sp.qty||1;
+            subRow.innerHTML = '<div class="sub-row-name">↳ ' + esc(sp.name) + '</div><span class="part-row-qty" style="font-size:11px">' + spPrinted + '/' + spQty + '</span><span class="sp sp-' + sp.status + '" style="cursor:pointer;font-size:11px" title="click to change">' + sp.status + '</span>';
+            const subActions = document.createElement('div'); subActions.style.display='flex'; subActions.style.gap='2px';
+            const spM=document.createElement('button'); spM.className='icon-btn'; spM.textContent='−'; spM.style.fontSize='11px';
+            spM.addEventListener('click',(function(pid,idx){return function(e){e.stopPropagation();adjustSubPrinted(pid,idx,-1);};})(p.id,si));
+            const spP=document.createElement('button'); spP.className='icon-btn'; spP.textContent='+'; spP.style.fontSize='11px';
+            spP.addEventListener('click',(function(pid,idx){return function(e){e.stopPropagation();adjustSubPrinted(pid,idx,1);};})(p.id,si));
+            const sDel=document.createElement('button'); sDel.className='icon-btn'; sDel.textContent='✕'; sDel.style.fontSize='11px';
+            sDel.addEventListener('click',(function(pid,idx){return function(){delSubPart(pid,idx);};})(p.id,si));
+            subActions.appendChild(spM); subActions.appendChild(spP); subActions.appendChild(sDel);
+            subRow.appendChild(subActions);
+            const subSp=subRow.querySelector('.sp');
+            if(subSp) subSp.addEventListener('click',(function(pid,idx){return function(e){e.stopPropagation();openSubStatusModal(pid,idx);};})(p.id,si));
+            table.appendChild(subRow);
+          });
+        }
+      });
+      card.appendChild(table);
+    }
+    list.appendChild(card);
+  });
+  wrap.appendChild(list);
+  return wrap;
+}
+
+
+function saveCatState() {
+  if (window.electronAPI) saveData({ parts, products, inventory, expandedCats: [...catExpanded] });
+}
+
+function toggleProduct(item) { if(openProducts.has(item)) openProducts.delete(item); else openProducts.add(item); renderProductView(); }
+
+function openRename(item) {
+  renameTarget=item;
+  document.getElementById('rename-input').value=item;
+  document.getElementById('rename-cat').value=products[item]?.category||'';
+  document.getElementById('rename-desc').value=products[item]?.description||'';
+  document.getElementById('rename-shiny').checked=!!(products[item]?.shiny);
+  document.getElementById('rename-n3durl').value=products[item]?.n3dUrl||'';
+  document.getElementById('rename-designer').value=products[item]?.designer||'';
+  document.getElementById('rename-source').value=products[item]?.source||'';
+  updateDatalist();
+  document.getElementById('rename-modal').style.display='';
+  setTimeout(()=>document.getElementById('rename-input').focus(),50);
+}
+function closeRename() { document.getElementById('rename-modal').style.display='none'; renameTarget=null; }
+async function saveRename() {
+  const newName=document.getElementById('rename-input').value.trim();
+  const newCat=document.getElementById('rename-cat').value.trim();
+  const newDesc=document.getElementById('rename-desc').value.trim();
+  const newShiny=document.getElementById('rename-shiny').checked;
+  if(!newName||!renameTarget) return;
+  parts.forEach(p=>{ if(p.item===renameTarget) p.item=newName; });
+  const oldP=products[renameTarget]||{}; delete products[renameTarget];
+  const newN3dUrl=document.getElementById('rename-n3durl').value.trim();
+  const newDesigner=document.getElementById('rename-designer').value.trim();
+  const newSource=document.getElementById('rename-source').value;
+  products[newName]={...oldP, category:newCat, description:newDesc, shiny:newShiny, n3dUrl:newN3dUrl||oldP.n3dUrl||'', designer:newDesigner, source:newSource};
+  if(openProducts.has(renameTarget)){ openProducts.delete(renameTarget); openProducts.add(newName); }
+  await persist(); closeRename(); render();
+}
+
+function renderKanban() {
+  const show=activeFilter==='all'?parts:parts.filter(p=>p.status===activeFilter);
+  ['queue','printing','done'].forEach(s=>{
+    const col=document.getElementById('col-'+s); if(!col) return;
+    col.innerHTML='';
+    const grp=show.filter(p=>p.status===s);
+    document.getElementById('cnt-'+s).textContent=grp.length;
+    grp.forEach(p=>col.appendChild(makeCard(p)));
+  });
+}
+
+function makeCard(p) {
+  const d=document.createElement('div');
+  d.className='card'; d.draggable=true; d.dataset.id=p.id;
+  d.ondragstart=e=>{ dragId=p.id; d.classList.add('dragging'); e.dataTransfer.effectAllowed='move'; };
+  d.ondragend=()=>{ d.classList.remove('dragging'); dragId=null; document.querySelectorAll('.drop-zone').forEach(z=>z.classList.remove('drag-over')); };
+  const sub=[p.item,p.variant].filter(Boolean).join(' — ');
+  const dots=Array.from({length:p.qty},(_,i)=>`<span class="dot${i<p.printed?' done':''}"></span>`).join('');
+  d.innerHTML=`
+    <div class="card-name">${esc(p.name)}</div>
+    ${sub?`<div class="card-sub">${esc(sub)}</div>`:''}
+    <div class="card-tags">
+      ${(p.colours&&p.colours.length?p.colours:[{hex:p.colour,name:p.colourName}]).filter(c=>c&&c.hex).map(c=>`<span class="colour-tag"><span class="swatch" style="background:${c.hex}"></span>${esc(c.name||c.hex)}</span>`).join('')}
+      ${p.stl?`<span class="tag-stl">${esc(p.stl)}</span>`:''}
+    </div>
+    <div class="card-footer">
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="adjustQty(${p.id},-1)">−</button>
+        <div><div class="qty-num">${p.printed}/${p.qty}</div><div class="qty-label">printed</div></div>
+        <button class="qty-btn" onclick="adjustQty(${p.id},1)">+</button>
+      </div>
+      <div class="card-actions">
+        ${p.status==='done'?`<button class="icon-btn" title="reprint" onclick="reprint(${p.id})">↺</button>`:''}
+        <button class="icon-btn" title="edit" onclick="openEdit(${p.id})">✎</button>
+        <button class="icon-btn" title="delete" onclick="del(${p.id})">✕</button>
+      </div>
+    </div>
+    ${p.qty>0?`<div class="print-dots">${dots}<span style="margin-left:5px;font-size:11px;color:var(--text2)">${p.printed} of ${p.qty}</span></div>`:''}
+    ${p.desc?`<div class="desc-text">${esc(p.desc)}</div>`:''}`;
+  return d;
+}
+
+async function adjustQty(id,delta) {
+  const p=parts.find(x=>x.id===id); if(!p) return;
+  p.printed=delta>0?Math.min(p.printed+1,p.qty):Math.max(p.printed-1,0);
+  if(p.printed===p.qty&&delta>0) p.status='done';
+  await persist(); render();
+}
+async function reprint(id) {
+  const p=parts.find(x=>x.id===id); if(!p) return;
+  parts.push({...p,id:nextId++,printed:0,status:'queue',reprints:0});
+  p.reprints=(p.reprints||0)+1; await persist(); render();
+}
+async function del(id) { parts=parts.filter(p=>p.id!==id); await persist(); render(); }
+
+function openAdd() {
+  editId=null;
+  document.getElementById('modal-title').textContent='add part';
+  ['name','item','variant','desc','stl'].forEach(f=>document.getElementById('f-'+f).value='');
+  document.getElementById('f-qty').value=1;
+  document.getElementById('f-status').value='queue';
+  resetColourRows([{hex:'#4a90d9',name:''}]);
+  document.getElementById('modal').style.display='';
+}
+function openEdit(id) {
+  editId=id; const p=parts.find(x=>x.id===id);
+  document.getElementById('modal-title').textContent='edit part';
+  document.getElementById('f-name').value=p.name||'';
+  document.getElementById('f-item').value=p.item||'';
+  document.getElementById('f-variant').value=p.variant||'';
+  document.getElementById('f-qty').value=p.qty||1;
+  document.getElementById('f-status').value=p.status;
+  const cols = p.colours&&p.colours.length ? p.colours : (p.colour ? [{hex:p.colour,name:p.colourName||''}] : [{hex:'#4a90d9',name:''}]);
+  resetColourRows(cols);
+  document.getElementById('modal').style.display='';
+}
+function closeModal() { document.getElementById('modal').style.display='none'; }
+async function saveCard() {
+  const name=document.getElementById('f-name').value.trim(); if(!name){ document.getElementById('f-name').focus(); return; }
+  const qty=parseInt(document.getElementById('f-qty').value)||1;
+  const item=document.getElementById('f-item').value.trim();
+  const colours=getColourRows();
+  const data={name,item,variant:document.getElementById('f-variant').value.trim(),desc:'',colours,colour:colours[0]?.hex||'#888888',colourName:colours[0]?.name||'',stl:'',qty,status:document.getElementById('f-status').value};
+  if(item&&!products[item]){ products[item]={category:''}; autoCreateProductFolder(item); }
+  if(editId){ const p=parts.find(x=>x.id===editId); Object.assign(p,data); p.printed=Math.min(p.printed,p.qty); }
+  else { data.id=nextId++; data.printed=0; data.reprints=0; parts.push(data); }
+  await persist(); closeModal(); render();
+}
+
+function onDragOver(e,status) { e.preventDefault(); document.getElementById('col-'+status).classList.add('drag-over'); }
+async function onDrop(e,status) {
+  e.preventDefault(); document.getElementById('col-'+status).classList.remove('drag-over');
+  if(dragId!=null){ const p=parts.find(x=>x.id===dragId); if(p){ p.status=status; await persist(); render(); } }
+}
+
+// ── IMPORT ──
+const TEMPLATE_COLS=['product','part_name','variant','colour_name','colour_hex','stl','qty','category','description'];
+
+async function doImport() {
+  pendingRows=[]; conflictQueue=[]; conflictDecisions={};
+  document.getElementById('import-status').innerHTML='';
+  document.getElementById('preview-wrap').style.display='none';
+  document.getElementById('import-confirm-btn').style.display='none';
+
+  let text;
+  if (isElectron) {
+    text = await window.electronAPI.openCsvDialog();
+    if (!text) return;
+  } else {
+    // browser fallback
+    const input = document.createElement('input'); input.type='file'; input.accept='.csv';
+    text = await new Promise(res => { input.onchange=e=>{ const r=new FileReader(); r.onload=ev=>res(ev.target.result); r.readAsText(e.target.files[0]); }; input.click(); });
+  }
+  parseCSV(text);
+  document.getElementById('import-modal').style.display='';
+}
+
+async function doExport() {
+  const rows=[TEMPLATE_COLS.join(',')];
+  parts.forEach(p=>{
+    const cat=products[p.item]?.category||'';
+    const colours = p.colours&&p.colours.length ? p.colours : (p.colour?[{hex:p.colour,name:p.colourName||''}]:[]);
+    const colourNames = colours.map(c=>c.name||'').join('|');
+    const colourHexes = colours.map(c=>c.hex||'').join('|');
+    rows.push([p.item,p.name,p.variant,colourNames,colourHexes,p.stl,p.qty,cat,p.desc].map(v=>String(v||'').replace(/,/g,';')).join(','));
+  });
+  const content=rows.join('\n');
+  if (isElectron) {
+    await window.electronAPI.saveCsvDialog(content);
+  } else {
+    const a=document.createElement('a'); a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(content); a.download='3d-print-export.csv'; a.click();
+  }
+}
+
+function parseCSV(text) {
+  const lines=text.trim().split(/\r?\n/).filter(l=>l.trim());
+  if(lines.length<2){ showImportStatus('need at least a header row and one data row.','err'); return; }
+  const header=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/\s+/g,'_'));
+  const idx=k=>header.indexOf(k);
+  const missing=['product','part_name'].filter(k=>idx(k)===-1);
+  if(missing.length){ showImportStatus(`missing required columns: ${missing.join(', ')}.`,'err'); return; }
+  const rows=[];
+  for(let i=1;i<lines.length;i++){
+    const cols=lines[i].split(',');
+    const get=k=>idx(k)>-1?(cols[idx(k)]||'').trim():'';
+    const product=get('product'),part_name=get('part_name');
+    if(!product||!part_name) continue;
+    rows.push({product,part_name,variant:get('variant'),colour_name:get('colour_name'),colour_hex:get('colour_hex')||'#888888',stl:get('stl'),qty:Math.max(1,parseInt(get('qty'))||1),category:get('category'),description:get('description')});
+  }
+  if(!rows.length){ showImportStatus('no valid rows found.','err'); return; }
+  pendingRows=rows;
+  const uniqueProducts=[...new Set(rows.map(r=>r.product))];
+  const existing=getItems();
+  conflictQueue=uniqueProducts.filter(p=>existing.includes(p));
+  conflictDecisions={};
+  const total=rows.length, prods=uniqueProducts.length, conflicts=conflictQueue.length;
+  showImportStatus(`${total} part${total!==1?'s':''} across ${prods} product${prods!==1?'s':''}${conflicts?` · ${conflicts} conflict${conflicts!==1?'s':''} to resolve`:''}. ready to import.`,'ok');
+  const cols=['product','part_name','colour_name','stl','qty'];
+  const head='<tr>'+cols.map(c=>`<th>${c.replace('_',' ')}</th>`).join('')+'</tr>';
+  const body=rows.slice(0,5).map(r=>'<tr>'+cols.map(c=>`<td>${esc(String(r[c]||''))}</td>`).join('')+'</tr>').join('');
+  document.getElementById('preview-table').innerHTML=head+body;
+  document.getElementById('preview-label').textContent=`preview — first ${Math.min(rows.length,5)} of ${rows.length} row${rows.length!==1?'s':''}`;
+  document.getElementById('preview-wrap').style.display='';
+  document.getElementById('import-confirm-btn').style.display='';
+}
+
+function showImportStatus(msg,type) {
+  const el=document.getElementById('import-status');
+  el.className='import-status '+(type==='err'?'err':'ok');
+  el.textContent=msg;
+}
+function closeImportModal() { document.getElementById('import-modal').style.display='none'; }
+
+function startConflictFlow() {
+  closeImportModal();
+  if(conflictQueue.length===0){ applyImport(); return; }
+  showNextConflict();
+}
+
+function showNextConflict() {
+  if(conflictQueue.length===0){ applyImport(); return; }
+  const productName=conflictQueue[0];
+  const current=Object.keys(conflictDecisions).length+1;
+  const incoming=pendingRows.filter(r=>r.product===productName).length;
+  const existing=parts.filter(p=>p.item===productName).length;
+  document.getElementById('conflict-step').innerHTML=`conflict ${current} of ${Object.keys(conflictDecisions).length+conflictQueue.length} — <strong>${productName}</strong>`;
+  document.getElementById('conflict-name').textContent=productName;
+  document.getElementById('conflict-desc').innerHTML=`This product already has <strong>${existing}</strong> part${existing!==1?'s':''} tracked. Your CSV adds <strong>${incoming}</strong> more. What would you like to do?`;
+  selectedConflictOpt='add';
+  document.getElementById('copt-add').classList.add('selected');
+  document.getElementById('copt-new').classList.remove('selected');
+  document.getElementById('conflict-modal').style.display='';
+}
+
+function selectConflictOpt(opt) {
+  selectedConflictOpt=opt;
+  document.getElementById('copt-add').classList.toggle('selected',opt==='add');
+  document.getElementById('copt-new').classList.toggle('selected',opt==='new');
+}
+
+function resolveConflict() {
+  const productName=conflictQueue.shift();
+  conflictDecisions[productName]=selectedConflictOpt;
+  document.getElementById('conflict-modal').style.display='none';
+  if(conflictQueue.length>0) showNextConflict(); else applyImport();
+}
+
+async function applyImport() {
+  document.getElementById('conflict-modal').style.display='none';
+  const existingItems=getItems(), newProductSuffixes={};
+  pendingRows.forEach(r=>{
+    let productName=r.product;
+    if(existingItems.includes(productName)){
+      const decision=conflictDecisions[productName]||'add';
+      if(decision==='new'){
+        if(!newProductSuffixes[productName]){
+          let s=2, c=`${productName} (${s})`;
+          while(existingItems.includes(c)||Object.values(newProductSuffixes).includes(c)){ s++; c=`${productName} (${s})`; }
+          newProductSuffixes[productName]=c;
+        }
+        productName=newProductSuffixes[productName];
+      }
+    }
+    if(!products[productName]){ products[productName]={category:r.category||''}; autoCreateProductFolder(productName); }
+    else if(r.category&&!products[productName].category) products[productName].category=r.category;
+    parts.push({id:nextId++,name:r.part_name,item:productName,variant:r.variant,desc:r.description,colour:r.colour_hex,colourName:r.colour_name,stl:r.stl,qty:r.qty,printed:0,status:'queue',reprints:0});
+    openProducts.add(productName);
+  });
+  await persist(); render();
+}
+
+init();
+
+// ── STATUS MODAL ──
+let statusModalPartId = null;
+let completionProductName = null;
+let completionQty = 1;
+
+function openStatusModal(partId) {
+  const p = parts.find(x => x.id === partId);
+  if (!p) return;
+  statusModalPartId = partId;
+  document.getElementById('status-modal-title').textContent = 'change status — ' + p.name;
+  const body = document.getElementById('status-modal-body');
+  body.innerHTML = '';
+
+  const options = ['planning','queue','printing','done'].filter(s => s !== p.status);
+
+  if (p.status === 'done') {
+    const label = document.createElement('p');
+    label.style.cssText = 'font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.5';
+    label.textContent = 'This part is marked done. Reset it to:';
+    body.appendChild(label);
+  }
+
+  options.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (s==='done'?' btn-success':'');
+    btn.style.cssText = 'width:100%;margin-bottom:8px;padding:12px;font-size:15px;text-align:left';
+    btn.textContent = s === 'done' ? '✓ done' : s;
+    btn.addEventListener('click', () => { setPartStatus(partId, s); closeStatusModal(); });
+    body.appendChild(btn);
+  });
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn';
+  cancelBtn.style.cssText = 'width:100%;margin-top:4px;padding:8px;color:var(--text2)';
+  cancelBtn.textContent = 'cancel';
+  cancelBtn.addEventListener('click', closeStatusModal);
+  body.appendChild(cancelBtn);
+  document.getElementById('status-modal').style.display = '';
+}
+
+function closeStatusModal() {
+  document.getElementById('status-modal').style.display = 'none';
+  statusModalPartId = null;
+}
+
+async function setPartStatus(partId, newStatus) {
+  const p = parts.find(x => x.id === partId);
+  if (!p) return;
+  const wasAlreadyDone = p.status === 'done';
+
+  if (newStatus === 'done') {
+    p.printed = p.qty;
+    // If has sub-parts, mark all done too
+    if (p.subParts && p.subParts.length) p.subParts.forEach(s => s.status = 'done');
+  } else if (wasAlreadyDone) {
+    p.printed = 0;
+    if (p.subParts && p.subParts.length) p.subParts.forEach(s => s.status = newStatus);
+    if (products[p.item]?.archived) { products[p.item].archived = false; openProducts.add(p.item); }
+  }
+
+  p.status = newStatus;
+
+  // Check if all parts in product are now done → ready to build (no auto-popup, user clicks badge)
+  await persist();
+  render();
+}
+
+async function openSubStatusModal(partId, subIdx) {
+  const p = parts.find(x => x.id === partId);
+  if (!p || !p.subParts || !p.subParts[subIdx]) return;
+  const sp = p.subParts[subIdx];
+
+  const opts = ['queue','printing','done'].filter(s => s !== sp.status);
+  const modal = document.getElementById('status-modal');
+  document.getElementById('status-modal-title').textContent = 'change status — ' + sp.name;
+  const body = document.getElementById('status-modal-body');
+  body.innerHTML = '';
+  opts.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (s==='done'?' btn-success':'');
+    btn.style.cssText = 'width:100%;margin-bottom:8px;padding:12px;font-size:15px;text-align:left';
+    btn.textContent = s;
+    btn.addEventListener('click', async () => {
+      sp.status = s;
+      if (s === 'done') {
+        // Check if all sub-parts done → mark parent done
+        if (p.subParts.every(x => x.status === 'done')) {
+          p.status = 'done'; p.printed = p.qty;
+        }
+      } else {
+        // If parent was done, reset it
+        if (p.status === 'done') { p.status = 'printing'; p.printed = p.subParts.filter(x=>x.status==='done').length; }
+        if (products[p.item]?.archived) { products[p.item].archived = false; openProducts.add(p.item); }
+      }
+      closeStatusModal();
+      await persist(); render();
+    });
+    body.appendChild(btn);
+  });
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'btn';
+  cancelBtn.style.cssText = 'width:100%;margin-top:4px;padding:8px;color:var(--text2)';
+  cancelBtn.textContent = 'cancel';
+  cancelBtn.addEventListener('click', closeStatusModal);
+  body.appendChild(cancelBtn);
+  modal.style.display = '';
+}
+
+let subPartTargetId = null;
+
+function addSubPart(partId) {
+  subPartTargetId = partId;
+  document.getElementById('subpart-name-input').value = '';
+  document.getElementById('subpart-modal').style.display = '';
+  setTimeout(() => document.getElementById('subpart-name-input').focus(), 50);
+}
+
+function closeSubpartModal() {
+  document.getElementById('subpart-modal').style.display = 'none';
+  subPartTargetId = null;
+}
+
+async function saveSubPart() {
+  const name = document.getElementById('subpart-name-input').value.trim();
+  if (!name || !subPartTargetId) return;
+  const p = parts.find(x => x.id === subPartTargetId);
+  if (!p) return;
+  if (!p.subParts) p.subParts = [];
+  const spQty = parseInt(document.getElementById('subpart-qty-input').value)||1;
+  p.subParts.push({ name, qty: spQty, printed: 0, status: 'queue' });
+  if (p.status === 'done') { p.status = 'queue'; p.printed = 0; }
+  closeSubpartModal();
+  await persist(); render();
+}
+
+async function delSubPart(partId, subIdx) {
+  const p = parts.find(x => x.id === partId);
+  if (!p || !p.subParts) return;
+  p.subParts.splice(subIdx, 1);
+  if (p.subParts.length === 0) p.subParts = [];
+  await persist(); render();
+}
+
+function adjustCompletionQty(delta) {
+  completionQty = Math.max(1, completionQty + delta);
+  document.getElementById('completion-qty-val').textContent = completionQty;
+}
+
+function closeCompletionModal() {
+  document.getElementById('completion-modal').style.display = 'none';
+  completionProductName = null;
+}
+
+async function confirmCompletion() {
+  if (!completionProductName) return;
+  // Add to inventory
+  const existing = inventory.find(i => i.name === completionProductName);
+  if (existing) {
+    existing.built = (existing.built||0) + completionQty;
+  } else {
+    inventory.push({
+      id: 'inv_' + Date.now(),
+      name: completionProductName,
+      category: products[completionProductName]?.category || '',
+      built: completionQty,
+      location: '',
+      box: 0,
+      shelf: completionQty,
+      distributions: [],
+      source: 'tracker'
+    });
+  }
+  // Archive the product
+  if (!products[completionProductName]) products[completionProductName] = {category:''};
+  products[completionProductName].archived = true;
+  await persist();
+  closeCompletionModal();
+  setView('inventory');
+  render();
+}
+
+// ── INVENTORY ──
+function invOnHand(item) {
+  const totalOut = (item.distributions||[]).reduce((a,d)=>a+(d.qty||0),0);
+  return Math.max(0,(item.built||0)-totalOut);
+}
+
+function invBoxShelfTotal(item) {
+  return (item.box||0) + (item.shelf||0);
+}
+
+function invSyncBoxShelf(item) {
+  const onHand = invOnHand(item);
+  const total = invBoxShelfTotal(item);
+  if (total !== onHand) {
+    // Adjust shelf to make up the difference
+    item.shelf = Math.max(0, onHand - (item.box||0));
+    item.box = Math.min(item.box||0, onHand);
+  }
+}
+
+function addToInventory(productName) {
+  const existing = inventory.find(i=>i.name===productName);
+  if (existing) {
+    existing.built = (existing.built||0) + 1;
+  } else {
+    inventory.push({ id:'inv_'+Date.now(), name:productName, category:products[productName]?.category||'', built:1, location:'', box:0, shelf:1, distributions:[], source:'tracker' });
+  }
+  persist(); renderInventoryView();
+  setView('inventory');
+}
+
+function renderInventoryView() {
+  const container = document.getElementById('view-inventory');
+  if (!container) return;
+
+  const localIP = container.dataset.ip || '';
+  let topHtml = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">' +
+    '<div style="font-size:13px;color:var(--text2)">' + inventory.length + ' product' + (inventory.length!==1?'s':'') + ' in inventory</div>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+    (localIP ? '<span style="font-size:12px;color:var(--text2);background:var(--bg2);padding:4px 10px;border-radius:var(--radius);border:0.5px solid var(--border)">phone: <strong>http://' + localIP + '</strong></span>' : '<button class="btn" onclick="showLocalIP()">show phone URL</button>') +
+    '<button class="btn btn-primary" onclick="openAddInventory()">+ add product</button>' +
+    '</div></div>';
+
+  if (!inventory.length) {
+    container.innerHTML = topHtml + '<p style="color:var(--text2);font-size:13px;padding:1rem 0">no inventory yet — mark a product ready to build and hit "+ inventory", or add one manually.</p>';
+    return;
+  }
+
+  container.innerHTML = topHtml + '<div class="product-list" id="inv-list"></div>';
+
+  const list = document.getElementById('inv-list');
+  inventory.forEach(item => {
+    const onHand = invOnHand(item);
+    const totalOut = (item.distributions||[]).reduce((a,d)=>a+(d.qty||0),0);
+    const byDest = {store:0,markets:0,website:0};
+    (item.distributions||[]).forEach(d=>{ if(byDest[d.dest]!==undefined) byDest[d.dest]+=d.qty||0; });
+    const isOpen = invExpanded.has(item.id);
+
+    const card = document.createElement('div');
+    card.className = 'product-card';
+
+    const header = document.createElement('div');
+    header.className = 'product-header';
+    header.innerHTML =
+      '<div class="product-title-wrap"><span class="product-title">' + esc(item.name) + '</span>' +
+        (item.category ? '<span class="cat-tag">' + esc(item.category) + '</span>' : '') +
+        (item.location ? '<span class="cat-tag">' + esc(item.location) + '</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:6px;align-items:center;margin-right:8px">' +
+        '<span style="font-size:11px;color:var(--text2)">built: ' + (item.built||0) + '</span>' +
+        (byDest.store ? '<span class="badge" style="background:var(--blue-bg);color:var(--blue-text)">store ' + byDest.store + '</span>' : '') +
+        (byDest.markets ? '<span class="badge" style="background:var(--amber-bg);color:var(--amber-text)">markets ' + byDest.markets + '</span>' : '') +
+        (byDest.website ? '<span class="badge" style="background:var(--green-bg);color:var(--green-dark)">web ' + byDest.website + '</span>' : '') +
+      '</div>' +
+      '<div style="display:flex;gap:10px;align-items:center;margin-right:10px">' +
+          '<div style="text-align:center"><div style="font-size:11px;color:var(--text2)">box</div><div style="font-size:16px;font-weight:600">' + (item.box||0) + '</div></div>' +
+          '<div style="text-align:center"><div style="font-size:11px;color:var(--text2)">shelf</div><div style="font-size:16px;font-weight:600">' + (item.shelf||0) + '</div></div>' +
+          '<div style="text-align:center"><div style="font-size:11px;color:var(--text2)">on hand</div><div style="font-size:20px;font-weight:600;color:' + (onHand>0?'var(--green)':'var(--text2)') + '">' + onHand + '</div></div>' +
+        '</div>' +
+      '<span class="chevron' + (isOpen?' open':'') + '">▶</span>';
+
+    header.addEventListener('click', (function(id){ return function(){ toggleInvCard(id); }; })(item.id));
+    card.appendChild(header);
+
+    if (isOpen) {
+      const detail = document.createElement('div');
+      detail.className = 'parts-table';
+      detail.style.padding = '14px 16px';
+      buildInvDetail(detail, item);
+      card.appendChild(detail);
+    }
+
+    list.appendChild(card);
+  });
+  container.dataset.ip = localIP;
+}
+
+function makeEditableNum(initialVal, onSave) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;min-width:50px;height:32px;cursor:pointer;border-top:0.5px solid var(--border2);border-bottom:0.5px solid var(--border2);position:relative';
+  const display = document.createElement('span');
+  display.className = 'editable-num';
+  display.style.cssText = 'font-size:16px;font-weight:600;padding:0 4px';
+  display.textContent = initialVal;
+  display.title = 'click to edit';
+  display.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.className = 'num-input';
+    input.value = display.textContent;
+    input.style.cssText = 'width:56px;font-size:15px;font-weight:600;text-align:center;background:var(--bg2);border:0.5px solid var(--border2);border-radius:4px;padding:2px;color:var(--text);font-family:inherit;outline:none';
+    wrap.replaceChild(input, display);
+    input.focus(); input.select();
+    const finish = async () => {
+      const v = parseInt(input.value);
+      display.textContent = isNaN(v) ? display.textContent : Math.max(0,v);
+      wrap.replaceChild(display, input);
+      if (!isNaN(v)) await onSave(Math.max(0,v));
+    };
+    input.addEventListener('blur', finish);
+    input.addEventListener('keydown', e => { if(e.key==='Enter') finish(); if(e.key==='Escape'){ wrap.replaceChild(display,input); } });
+  });
+  wrap.appendChild(display);
+  return wrap;
+}
+
+function buildInvDetail(container, item) {
+  const dest = invLogDest[item.id] || 'store';
+  const qty = invLogQty[item.id] || 1;
+  const onHand = invOnHand(item);
+  const totalOut = (item.distributions||[]).reduce((a,d)=>a+(d.qty||0),0);
+
+  // Summary stats
+  const stats = document.createElement('div');
+  stats.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px';
+  stats.innerHTML =
+    '<div class="stat"><div class="stat-label">built</div><div class="stat-val">' + (item.built||0) + '</div></div>' +
+    '<div class="stat"><div class="stat-label">distributed</div><div class="stat-val">' + totalOut + '</div></div>' +
+    '<div class="stat"><div class="stat-label">on hand</div><div class="stat-val" style="color:var(--green)">' + onHand + '</div></div>';
+  container.appendChild(stats);
+
+  // Box / Shelf split controls
+  invSyncBoxShelf(item);
+  const bsLabel = document.createElement('div');
+  bsLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px';
+  bsLabel.textContent = 'location split';
+  container.appendChild(bsLabel);
+
+  const bsNote = document.createElement('div');
+  bsNote.style.cssText = 'font-size:11px;color:var(--text2);margin-bottom:10px';
+  bsNote.textContent = 'box + shelf = ' + invOnHand(item) + ' on hand — adjusting one updates the other';
+  container.appendChild(bsNote);
+
+  ['box','shelf'].forEach(loc => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:13px;font-weight:500;text-transform:capitalize';
+    lbl.textContent = loc;
+    const ctrl = document.createElement('div');
+    ctrl.style.display = 'flex';
+    const mBtn = document.createElement('button'); mBtn.className='qty-btn'; mBtn.textContent='−';
+    mBtn.addEventListener('click', (function(id,l){ return function(){ invAdjustLocation(id,l,-1); }; })(item.id, loc));
+    const val = makeEditableNum(item[loc]||0, (function(l){ return async (v) => {
+      const onHand = invOnHand(item);
+      const other = l==='box'?'shelf':'box';
+      item[l] = Math.max(0, Math.min(onHand, v));
+      item[other] = Math.max(0, onHand - item[l]);
+      const otherEl = document.getElementById('inv-'+other+'-'+item.id);
+      if (otherEl) otherEl.textContent = item[other];
+      await persist();
+    };})(loc));
+    val.id = 'inv-' + loc + '-' + item.id;
+    const pBtn = document.createElement('button'); pBtn.className='qty-btn'; pBtn.textContent='+';
+    pBtn.addEventListener('click', (function(id,l){ return function(){ invAdjustLocation(id,l,1); }; })(item.id, loc));
+    ctrl.appendChild(mBtn); ctrl.appendChild(val); ctrl.appendChild(pBtn);
+    row.appendChild(lbl); row.appendChild(ctrl);
+    container.appendChild(row);
+  });
+
+  const bsDivider = document.createElement('div');
+  bsDivider.style.cssText = 'border-top:0.5px solid var(--border);margin:8px 0 16px';
+  container.appendChild(bsDivider);
+
+  // Built count adjuster
+  const builtRow = document.createElement('div');
+  builtRow.style.cssText = 'display:flex;align-items:center;justify-content:space-between;margin-bottom:16px';
+  builtRow.innerHTML = '<div style="font-size:13px;font-weight:500">built count</div>';
+  const builtCtrl = document.createElement('div');
+  builtCtrl.style.cssText = 'display:flex;align-items:center';
+  const minusBtn = document.createElement('button');
+  minusBtn.className = 'qty-btn'; minusBtn.textContent = '−';
+  minusBtn.addEventListener('click', (function(id){ return function(){ invAdjustBuilt(id,-1); }; })(item.id));
+  const builtVal = makeEditableNum(item.built||0, async (v) => {
+    item.built = Math.max(0, v);
+    invSyncBoxShelf(item);
+    await persist(); renderInventoryView();
+  });
+  const plusBtn = document.createElement('button');
+  plusBtn.className = 'qty-btn'; plusBtn.textContent = '+';
+  plusBtn.addEventListener('click', (function(id){ return function(){ invAdjustBuilt(id,1); }; })(item.id));
+  builtCtrl.appendChild(minusBtn); builtCtrl.appendChild(builtVal); builtCtrl.appendChild(plusBtn);
+  builtRow.appendChild(builtCtrl);
+  container.appendChild(builtRow);
+
+  // Destination selector
+  const destLabel = document.createElement('div');
+  destLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px';
+  destLabel.textContent = 'log outgoing';
+  container.appendChild(destLabel);
+
+  const destBtns = document.createElement('div');
+  destBtns.style.cssText = 'display:flex;gap:6px;margin-bottom:10px';
+  ['store','markets','website'].forEach(d => {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (dest===d?' btn-primary':'');
+    btn.style.cssText = 'flex:1;font-size:12px;padding:6px 4px';
+    btn.textContent = d;
+    btn.addEventListener('click', (function(id,dd){ return function(){ invSetDest(id,dd); }; })(item.id, d));
+    destBtns.appendChild(btn);
+  });
+  container.appendChild(destBtns);
+
+  // Qty + note + log button row
+  const logRow = document.createElement('div');
+  logRow.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:10px';
+  const qtyCtrl = document.createElement('div');
+  qtyCtrl.style.display = 'flex';
+  const qMinus = document.createElement('button'); qMinus.className='qty-btn'; qMinus.textContent='−';
+  qMinus.addEventListener('click', (function(id){ return function(){ invAdjustLogQty(id,-1); }; })(item.id));
+  const qVal = makeEditableNum(qty, (function(id){ return (v) => {
+    invLogQty[id] = Math.max(1, v);
+    const el = document.getElementById('inv-log-qty-'+id);
+    if (el && el.dataset) el.dataset.val = invLogQty[id];
+  };})(item.id));
+  qVal.id = 'inv-log-qty-' + item.id;
+  const qPlus = document.createElement('button'); qPlus.className='qty-btn'; qPlus.textContent='+';
+  qPlus.addEventListener('click', (function(id){ return function(){ invAdjustLogQty(id,1); }; })(item.id));
+  qtyCtrl.appendChild(qMinus); qtyCtrl.appendChild(qVal); qtyCtrl.appendChild(qPlus);
+  const noteInput = document.createElement('input');
+  noteInput.id = 'inv-log-note-' + item.id;
+  noteInput.placeholder = 'note (optional)';
+  noteInput.style.cssText = 'flex:1;font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;outline:none';
+  const logBtn = document.createElement('button');
+  logBtn.className = 'btn btn-success'; logBtn.style.whiteSpace='nowrap';
+  logBtn.textContent = 'log ' + qty;
+  logBtn.addEventListener('click', (function(id){ return function(){ invLogDist(id); }; })(item.id));
+  logRow.appendChild(qtyCtrl); logRow.appendChild(noteInput); logRow.appendChild(logBtn);
+  container.appendChild(logRow);
+
+  // History
+  if (item.distributions && item.distributions.length) {
+    const histLabel = document.createElement('div');
+    histLabel.style.cssText = 'font-size:12px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;margin-top:4px';
+    histLabel.textContent = 'history';
+    container.appendChild(histLabel);
+    [...item.distributions].reverse().forEach((d, ri) => {
+      const realIdx = item.distributions.length - 1 - ri;
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border);font-size:13px';
+      const destPill = document.createElement('span');
+      destPill.className = 'sp sp-' + (d.dest==='store'?'queue':d.dest==='markets'?'printing':'done');
+      destPill.style.fontSize = '11px';
+      destPill.textContent = d.dest;
+      const note = document.createElement('span');
+      note.style.cssText = 'color:var(--text2);flex:1';
+      note.textContent = d.note||'';
+      const qtySpan = document.createElement('span');
+      qtySpan.style.fontWeight = '500';
+      qtySpan.textContent = '-' + d.qty;
+      const delBtn = document.createElement('button');
+      delBtn.className = 'icon-btn'; delBtn.textContent = '✕';
+      delBtn.addEventListener('click', (function(id,idx){ return function(){ removeDistribution(id,idx); }; })(item.id, realIdx));
+      row.appendChild(destPill); row.appendChild(note); row.appendChild(qtySpan); row.appendChild(delBtn);
+      container.appendChild(row);
+    });
+  }
+
+  // Bottom actions
+  const actions = document.createElement('div');
+  actions.style.cssText = 'display:flex;gap:8px;margin-top:14px';
+  const locBtn = document.createElement('button');
+  locBtn.className='btn'; locBtn.style.cssText='flex:1;font-size:12px';
+  locBtn.textContent = 'set location';
+  locBtn.addEventListener('click', (function(id){ return function(){ invSetLocation(id); }; })(item.id));
+  const delBtn = document.createElement('button');
+  delBtn.className='btn'; delBtn.style.cssText='font-size:12px;color:var(--red-text);border-color:var(--red-text)';
+  delBtn.textContent='delete';
+  delBtn.addEventListener('click', (function(id){ return function(){ invDelete(id); }; })(item.id));
+  actions.appendChild(locBtn); actions.appendChild(delBtn);
+  container.appendChild(actions);
+}
+
+
+async function invAdjustBuilt(id, delta) {
+  const item = inventory.find(i=>i.id===id); if(!item) return;
+  item.built = Math.max(0,(item.built||0)+delta);
+  await persist(); renderInventoryView();
+}
+
+async function invAdjustLocation(id, loc, delta) {
+  const item = inventory.find(i=>i.id===id); if(!item) return;
+  const onHand = invOnHand(item);
+  const other = loc==='box' ? 'shelf' : 'box';
+  item[loc] = Math.max(0, Math.min(onHand, (item[loc]||0) + delta));
+  item[other] = Math.max(0, onHand - item[loc]);
+  // Update displays without full re-render
+  const locEl = document.getElementById('inv-'+loc+'-'+id);
+  const otherEl = document.getElementById('inv-'+other+'-'+id);
+  if (locEl) locEl.textContent = item[loc];
+  if (otherEl) otherEl.textContent = item[other];
+  await persist();
+}
+
+function toggleInvCard(id) {
+  if (invExpanded.has(id)) invExpanded.delete(id);
+  else invExpanded.add(id);
+  renderInventoryView();
+}
+
+function invSetDest(id, dest) { invLogDest[id]=dest; renderInventoryView(); }
+
+function invAdjustLogQty(id, delta) {
+  invLogQty[id] = Math.max(1,(invLogQty[id]||1)+delta);
+  const el = document.getElementById('inv-log-qty-'+id);
+  if (el) el.textContent = invLogQty[id];
+}
+
+async function invLogDist(id) {
+  const item = inventory.find(i=>i.id===id); if(!item) return;
+  const dest = invLogDest[id]||'store';
+  const qty = invLogQty[id]||1;
+  const note = (document.getElementById('inv-log-note-'+id)||{}).value||'';
+  const onHand = invOnHand(item);
+
+  if (qty > onHand) {
+    alert('Not enough stock — you only have ' + onHand + ' on hand.');
+    return;
+  }
+
+  const shelf = item.shelf||0;
+  const box = item.box||0;
+  const fromBox = Math.max(0, qty - shelf);
+
+  if (fromBox > 0) {
+    const confirmed = confirm(
+      'Only ' + shelf + ' on shelf. This will also take ' + fromBox + ' from your box stock. Are you sure?'
+    );
+    if (!confirmed) return;
+  }
+
+  // Deduct from shelf first, then box
+  const newShelf = Math.max(0, shelf - qty);
+  const newBox = Math.max(0, box - fromBox);
+  item.shelf = newShelf;
+  item.box = newBox;
+
+  if(!item.distributions) item.distributions=[];
+  item.distributions.push({dest,qty,note,date:new Date().toISOString()});
+  await persist(); renderInventoryView();
+}
+
+async function removeDistribution(id, idx) {
+  const item = inventory.find(i=>i.id===id); if(!item) return;
+  item.distributions.splice(idx,1);
+  await persist(); renderInventoryView();
+}
+
+async function invSetLocation(id) {
+  const item = inventory.find(i=>i.id===id); if(!item) return;
+  // Use a simple inline edit via a temporary input
+  const loc = window.electronAPI ? await new Promise(resolve => {
+    const cur = item.location||'';
+    const input = document.createElement('input');
+    input.value = cur;
+    input.placeholder = 'e.g. shelf A, box 3';
+    input.style.cssText = 'font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;outline:none;width:200px;margin-right:8px';
+    const ok = document.createElement('button');
+    ok.className='btn btn-primary'; ok.style.cssText='font-size:12px;padding:4px 10px';
+    ok.textContent='save';
+    const wrap = document.createElement('div');
+    wrap.style.cssText='display:flex;align-items:center;gap:6px;padding:8px 16px;background:var(--bg2);border-top:0.5px solid var(--border)';
+    wrap.appendChild(input); wrap.appendChild(ok);
+    const card = document.querySelector('[data-invid="'+id+'"]');
+    const target = card ? card.querySelector('.parts-table') : null;
+    if (target) target.insertBefore(wrap, target.firstChild);
+    else document.body.appendChild(wrap);
+    ok.addEventListener('click', () => { wrap.remove(); resolve(input.value.trim()); });
+    input.addEventListener('keydown', e => { if(e.key==='Enter'){ wrap.remove(); resolve(input.value.trim()); } });
+    setTimeout(() => input.focus(), 50);
+  }) : null;
+  if (loc === null) return;
+  item.location = loc;
+  await persist(); renderInventoryView();
+}
+
+async function invDelete(id) {
+  if (!confirm('Remove this item from inventory?')) return;
+  inventory = inventory.filter(i=>i.id!==id);
+  invExpanded.delete(id);
+  await persist(); renderInventoryView();
+}
+
+function openAddInventory() {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200';
+  modal.innerHTML = '<div style="background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius-lg);padding:1.5rem;width:320px;max-width:95vw"><h3 style="font-size:16px;font-weight:600;margin-bottom:1rem;color:var(--text)">add to inventory</h3><div class=\"field\"><label>product name *</label><input id=\"inv-add-name\" placeholder=\"e.g. Pikachu V3\"/></div><div class=\"field\"><label>quantity on hand</label><input id=\"inv-add-qty\" type=\"number\" min=\"0\" value=\"1\"/></div><div class=\"field\"><label>category</label><input id=\"inv-add-cat\" placeholder=\"e.g. character\"/></div><div class=\"modal-footer\"><button class=\"btn\" id=\"inv-add-cancel\">cancel</button><button class=\"btn btn-primary\" id=\"inv-add-save\">add</button></div></div>';
+  document.body.appendChild(modal);
+  setTimeout(()=>document.getElementById('inv-add-name').focus(),50);
+  document.getElementById('inv-add-cancel').addEventListener('click',()=>modal.remove());
+  document.getElementById('inv-add-save').addEventListener('click', async ()=>{
+    const name=(document.getElementById('inv-add-name').value||'').trim();
+    if(!name){document.getElementById('inv-add-name').focus();return;}
+    const qty=parseInt(document.getElementById('inv-add-qty').value)||0;
+    const cat=(document.getElementById('inv-add-cat').value||'').trim();
+    inventory.push({id:'inv_'+Date.now(),name,category:cat,built:qty,location:'',box:0,shelf:qty,distributions:[],source:'manual'});
+    modal.remove(); await persist(); renderInventoryView();
+  });
+  modal.addEventListener('click',e=>{if(e.target===modal)modal.remove();});
+}
+
+async function showLocalIP() {
+  if (window.electronAPI && window.electronAPI.getLocalIP) {
+    const ip = await window.electronAPI.getLocalIP();
+    const container = document.getElementById('view-inventory');
+    if (container) { container.dataset.ip = ip; renderInventoryView(); }
+  }
+}
+
+// listen for phone updates
+if (window.electronAPI && window.electronAPI.onInventoryUpdated) {
+  window.electronAPI.onInventoryUpdated(async () => {
+    const saved = await loadData();
+    if (saved) {
+      inventory = saved.inventory || [];
+      parts = saved.parts || [];
+      products = saved.products || {};
+    }
+    render();
+  });
+}
+
+// ── COLOUR VIEW ──
+let colourExpanded = new Set();
+
+function renderColourView() {
+  const container = document.getElementById('view-colours');
+  if (!container) return;
+
+  const queuedParts = parts.filter(p => p.status === 'queue');
+
+  if (!queuedParts.length) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:13px;padding:1rem 0">no parts in queue — add some parts and set their status to queue.</p>';
+    return;
+  }
+
+  const colourMap = {};
+  queuedParts.forEach(p => {
+    const colours = p.colours && p.colours.length ? p.colours : (p.colour ? [{hex:p.colour, name:p.colourName||''}] : [{hex:'#888888', name:'unknown'}]);
+    colours.forEach(c => {
+      const key = (c.name||c.hex||'unknown').toLowerCase().trim();
+      if (!colourMap[key]) colourMap[key] = { name: c.name||c.hex||'unknown', hex: c.hex||'#888888', parts: [] };
+      colourMap[key].parts.push(p);
+    });
+  });
+
+  const sorted = Object.values(colourMap).sort((a,b) => b.parts.length - a.parts.length);
+  const totalPcsAll = queuedParts.reduce((a,p)=>a+p.qty,0);
+
+  container.innerHTML = '';
+  const summary = document.createElement('div');
+  summary.style.cssText = 'font-size:13px;color:var(--text2);margin-bottom:14px';
+  summary.textContent = sorted.length + ' colour' + (sorted.length!==1?'s':'') + ' · ' + queuedParts.length + ' part' + (queuedParts.length!==1?'s':'') + ' · ' + totalPcsAll + ' pieces in queue';
+  container.appendChild(summary);
+
+  sorted.forEach(group => {
+    const key = group.name.toLowerCase().trim();
+    const isOpen = colourExpanded.has(key);
+    const totalPcs = group.parts.reduce((a,p)=>a+p.qty,0);
+
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    card.style.marginBottom = '10px';
+
+    // Clickable header
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;user-select:none';
+    hdr.addEventListener('click', () => {
+      if (colourExpanded.has(key)) colourExpanded.delete(key); else colourExpanded.add(key);
+      renderColourView();
+    });
+
+    const swatch = document.createElement('div');
+    swatch.style.cssText = 'width:24px;height:24px;border-radius:50%;background:'+group.hex+';border:0.5px solid rgba(0,0,0,.15);flex-shrink:0';
+
+    const nameWrap = document.createElement('div');
+    nameWrap.style.flex = '1';
+    const nameEl = document.createElement('div');
+    nameEl.style.cssText = 'font-size:14px;font-weight:500;color:var(--text)';
+    nameEl.textContent = group.name;
+    const countEl = document.createElement('div');
+    countEl.style.cssText = 'font-size:11px;color:var(--text2);margin-top:2px';
+    countEl.textContent = group.parts.length + ' part' + (group.parts.length!==1?'s':'') + ' · ' + totalPcs + ' piece' + (totalPcs!==1?'s':'');
+    nameWrap.appendChild(nameEl); nameWrap.appendChild(countEl);
+
+    const chevron = document.createElement('span');
+    chevron.className = 'chevron' + (isOpen?' open':'');
+    chevron.textContent = '▶'; chevron.style.fontSize = '11px';
+
+    hdr.appendChild(swatch); hdr.appendChild(nameWrap); hdr.appendChild(chevron);
+    card.appendChild(hdr);
+
+    if (isOpen) {
+      const table = document.createElement('div');
+      table.className = 'parts-table';
+      group.parts.forEach(p => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:0.5px solid var(--border);font-size:13px';
+        row.innerHTML =
+          '<div style="flex:1"><div style="font-weight:500;color:var(--text)">' + esc(p.name) + '</div>' +
+          '<div style="font-size:11px;color:var(--text2)">' + esc(p.item||'') + (p.variant?' · '+esc(p.variant):'') + '</div></div>' +
+          '<span style="font-size:12px;color:var(--text2)">' + p.qty + ' pc'+(p.qty!==1?'s':'')+'</span>' +
+          '<span class="sp sp-queue" style="font-size:11px">queue</span>';
+        table.appendChild(row);
+      });
+      card.appendChild(table);
+    }
+
+    container.appendChild(card);
+  });
+}
+
+// ── ARCHIVE ──
+async function archiveProduct(item) {
+  if (!products[item]) products[item] = {category:''};
+  products[item].archived = true;
+  await persist(); render();
+}
+
+async function unarchiveProduct(item) {
+  if (products[item]) products[item].archived = false;
+  await persist(); render();
+}
+
+function renderArchiveView() {
+  const container = document.getElementById('view-archive');
+  const archived = getItems().filter(i => products[i]?.archived);
+  if (!archived.length) {
+    container.innerHTML = '<p style="color:var(--text2);font-size:13px;padding:1rem 0">no archived products yet.</p>';
+    return;
+  }
+  container.innerHTML = '<div style="margin-bottom:12px;font-size:13px;color:var(--text2)">' + archived.length + ' archived product' + (archived.length!==1?'s':'') + '</div><div class="product-list" id="archive-list"></div>';
+  const list = document.getElementById('archive-list');
+
+  archived.forEach(item => {
+    const ps = parts.filter(p => p.item===item);
+    const tp = ps.reduce((a,p)=>a+p.qty,0), dp = ps.reduce((a,p)=>a+p.printed,0);
+    const cat = products[item]?.category||'';
+
+    const card = document.createElement('div');
+    card.className = 'product-card';
+    card.style.opacity = '.8';
+
+    const header = document.createElement('div');
+    header.className = 'product-header';
+    header.style.cursor = 'default';
+    header.innerHTML =
+      '<div class="product-title-wrap">' +
+        '<span class="product-title" style="color:var(--text2)">' + esc(item) + '</span>' +
+        (cat ? '<span class="cat-tag" style="margin-left:4px">' + esc(cat) + '</span>' : '') +
+      '</div>' +
+      '<span style="font-size:11px;color:var(--text2);margin-right:8px">' + dp + '/' + tp + ' pcs</span>' +
+      '<span class="ready-badge" style="margin-right:8px">&#10003; complete</span>';
+
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'btn';
+    restoreBtn.style.cssText = 'font-size:12px;padding:4px 12px';
+    restoreBtn.textContent = '↑ restore';
+    restoreBtn.addEventListener('click', (function(n){ return function(){ unarchiveProduct(n); }; })(item));
+
+    const restartBtn = document.createElement('button');
+    restartBtn.className = 'btn btn-primary';
+    restartBtn.style.cssText = 'font-size:12px;padding:4px 12px;margin-left:4px';
+    restartBtn.textContent = '⟳ restart';
+    restartBtn.addEventListener('click', (function(n){ return function(){ restartProduct(n); }; })(item));
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'btn';
+    deleteBtn.style.cssText = 'font-size:12px;padding:4px 12px;margin-left:4px;color:var(--red-text);border-color:var(--red-text)';
+    deleteBtn.textContent = 'delete';
+    deleteBtn.addEventListener('click', (function(n){ return function(){ deleteProduct(n); }; })(item));
+
+    header.appendChild(restoreBtn);
+    header.appendChild(restartBtn);
+    header.appendChild(deleteBtn);
+    card.appendChild(header);
+    list.appendChild(card);
+  });
+}
+
+
+async function deleteProduct(item) {
+  if (!confirm('Permanently delete "' + item + '" and all its parts? This cannot be undone.')) return;
+  parts = parts.filter(p => p.item !== item);
+  delete products[item];
+  await persist(); render();
+}
+
+// ── ADD PRODUCT ──
+let apImagePath = null;
+
+function openAddProduct() {
+  apImagePath = null;
+  document.getElementById('ap-name').value = '';
+  document.getElementById('ap-cat').value = '';
+  document.getElementById('ap-img-preview').style.display = 'none';
+  document.getElementById('add-product-modal').style.display = '';
+  setTimeout(() => document.getElementById('ap-name').focus(), 50);
+}
+function closeAddProduct() { document.getElementById('add-product-modal').style.display = 'none'; }
+
+async function apUploadImage() {
+  if (!window.electronAPI) return;
+  const name = document.getElementById('ap-name').value.trim();
+  if (!name && !appSettings.threeMfFolder) {
+    // Allow temp path — will move when saved
+    const result = await window.electronAPI.uploadImage('', 'cover');
+    if (result && result.ok) { apImagePath = result.destPath; showApPreview(result.destPath); }
+    return;
+  }
+  const folder = appSettings.threeMfFolder ? await window.electronAPI.getProductFolder(name || 'temp', appSettings.threeMfFolder) : '';
+  const result = await window.electronAPI.uploadImage(folder || '.', 'cover');
+  if (result && result.ok) { apImagePath = result.destPath; showApPreview(result.destPath); }
+}
+
+function showApPreview(imgPath) {
+  document.getElementById('ap-img-el').src = 'file://' + imgPath;
+  document.getElementById('ap-img-preview').style.display = '';
+}
+
+async function saveAddProduct() {
+  const name = document.getElementById('ap-name').value.trim();
+  if (!name) { document.getElementById('ap-name').focus(); return; }
+  const cat = document.getElementById('ap-cat').value.trim();
+  const apDesc = (document.getElementById('ap-desc').value||'').trim();
+  const apShiny = document.getElementById('ap-shiny').checked;
+  const apDesigner = (document.getElementById('ap-designer').value||'').trim();
+  const apSource = document.getElementById('ap-source').value;
+  if (!products[name]) products[name] = { category: cat, description: apDesc, shiny: apShiny, designer: apDesigner, source: apSource };
+  else { products[name].category = cat; products[name].description = apDesc; products[name].shiny = apShiny; products[name].designer = apDesigner; products[name].source = apSource; }
+  if (apImagePath) products[name].imagePath = apImagePath;
+  openProducts.add(name);
+  autoCreateProductFolder(name);
+  await persist();
+  closeAddProduct();
+  setView('product');
+  render();
+}
+
+async function uploadProductImage(productName) {
+  if (!window.electronAPI) return;
+  const folder = appSettings.threeMfFolder
+    ? await window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder)
+    : null;
+  const result = await window.electronAPI.uploadImage(folder || '.', 'cover');
+  if (result && result.ok) {
+    if (!products[productName]) products[productName] = { category: '' };
+    products[productName].imagePath = result.destPath;
+    await persist(); render();
+  }
+}
+
+// ── SETTINGS ──
+async function openSettings() {
+  document.getElementById('s-3mf-folder').value = appSettings.threeMfFolder || '';
+  document.getElementById('s-slicer').value = appSettings.slicer || 'bambu';
+  document.getElementById('s-bambu-path').value = appSettings.bambuPath || '';
+  document.getElementById('s-orca-path').value = appSettings.orcaPath || '';
+  document.getElementById('settings-modal').style.display = '';
+}
+function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+async function pick3mfFolder() {
+  if (!window.electronAPI) return;
+  const folder = await window.electronAPI.pick3mfFolder();
+  if (folder) document.getElementById('s-3mf-folder').value = folder;
+}
+async function saveSettingsModal() {
+  appSettings.threeMfFolder = document.getElementById('s-3mf-folder').value;
+  appSettings.slicer = document.getElementById('s-slicer').value;
+  appSettings.bambuPath = document.getElementById('s-bambu-path').value;
+  appSettings.orcaPath = document.getElementById('s-orca-path').value;
+  if (window.electronAPI) await window.electronAPI.saveSettings(appSettings);
+  closeSettings();
+}
+
+// ── 3MF FILE HANDLING ──
+async function uploadProduct3mf(productName) {
+  if (!window.electronAPI) return;
+  if (!appSettings.threeMfFolder) { alert('Please set your 3MF folder in Settings first.'); openSettings(); return; }
+  const result = await window.electronAPI.upload3mf(productName, appSettings.threeMfFolder);
+  if (!result || result.error) { if (result?.error) alert('Upload failed: ' + result.error); return; }
+  if (!products[productName]) products[productName] = { category: '' };
+  if (!products[productName].threeMfFiles) products[productName].threeMfFiles = [];
+  if (!products[productName].threeMfFiles.includes(result.fileName)) {
+    products[productName].threeMfFiles.push(result.fileName);
+  }
+
+  // Ask if pre-sliced
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;z-index:200';
+  const inner = document.createElement('div');
+  inner.style.cssText = 'background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius-lg);padding:1.5rem;width:320px;max-width:95vw';
+  inner.innerHTML =
+    '<h3 style="font-size:16px;font-weight:600;margin-bottom:8px;color:var(--text)">3MF uploaded</h3>' +
+    '<p style="font-size:13px;color:var(--text2);margin-bottom:1rem;line-height:1.5"><strong style="color:var(--text)">' + result.fileName + '</strong> has been saved to the product folder.</p>' +
+    '<div style="display:flex;align-items:center;gap:10px;padding:12px;background:var(--bg2);border-radius:var(--radius);border:0.5px solid var(--border2);cursor:pointer" id="presliced-toggle">' +
+      '<div id="presliced-check" style="width:20px;height:20px;border-radius:4px;border:2px solid var(--border2);background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px"></div>' +
+      '<div><div style="font-size:13px;font-weight:500;color:var(--text)">pre-sliced and ready to print</div><div style="font-size:11px;color:var(--text2);margin-top:2px">tick if this file is ready to send to the printer</div></div>' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;margin-top:1rem;justify-content:flex-end">' +
+      '<button class="btn btn-primary" id="presliced-save" style="flex:1">save</button>' +
+    '</div>';
+  modal.appendChild(inner);
+  document.body.appendChild(modal);
+
+  let isPresliced = false;
+  document.getElementById('presliced-toggle').addEventListener('click', () => {
+    isPresliced = !isPresliced;
+    const chk = document.getElementById('presliced-check');
+    chk.style.background = isPresliced ? 'var(--green)' : 'transparent';
+    chk.style.borderColor = isPresliced ? 'var(--green)' : 'var(--border2)';
+    chk.textContent = isPresliced ? '✓' : '';
+    chk.style.color = 'white';
+  });
+  document.getElementById('presliced-save').addEventListener('click', async () => {
+    products[productName].preSliced = isPresliced;
+    modal.remove();
+    await persist(); render();
+  });
+}
+
+async function autoCreateProductFolder(productName) {
+  if (!window.electronAPI || !appSettings.threeMfFolder || !productName) return;
+  try { await window.electronAPI.createProductFolder(productName, appSettings.threeMfFolder); }
+  catch(e) {}
+}
+
+function productHas3mf(productName) {
+  return !!(products[productName]?.threeMfFiles && products[productName].threeMfFiles.length);
+}
+
+async function openProductFolder(productName) {
+  if (!window.electronAPI) return;
+  if (!appSettings.threeMfFolder) { alert('Please set your 3MF folder in Settings first.'); openSettings(); return; }
+  const folder = await window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder);
+  if (folder) await window.electronAPI.openFolder(folder);
+}
+
+async function openProductInSlicer(productName) {
+  if (!window.electronAPI) return;
+  if (!appSettings.threeMfFolder) { alert('Please set your 3MF folder in Settings first.'); openSettings(); return; }
+  const folder = await window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder);
+  if (!folder) return;
+  const result = await window.electronAPI.openInSlicer(folder, appSettings.slicer || 'bambu');
+  if (result && !result.ok) alert('Could not open slicer: ' + (result.error || 'unknown error'));
+}
+
+async function ensureProductFolder(productName) {
+  if (!window.electronAPI || !appSettings.threeMfFolder) return;
+  await window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder);
+  // Create folder by uploading nothing — just ensure it exists via main process
+  try { await window.electronAPI.openFolder('__create__' + productName + '__' + appSettings.threeMfFolder); } catch(e) {}
+}
+
+// ── SUB-PART PRINTED COUNT ──
+async function adjustSubPrinted(partId, subIdx, delta) {
+  const p = parts.find(x => x.id === partId);
+  if (!p || !p.subParts || !p.subParts[subIdx]) return;
+  const sp = p.subParts[subIdx];
+  sp.printed = Math.max(0, Math.min(sp.qty||1, (sp.printed||0) + delta));
+  if (sp.printed >= (sp.qty||1)) {
+    sp.status = 'done';
+    // Check if all sub-parts done → mark parent done
+    if (p.subParts.every(x => x.status === 'done')) {
+      p.status = 'done'; p.printed = p.qty;
+    }
+  } else if (sp.status === 'done') {
+    sp.status = 'printing';
+    if (p.status === 'done') { p.status = 'printing'; }
+  }
+  await persist(); render();
+}
+
+// ── N3D INTEGRATION ──
+let n3dApiKey = '';
+let n3dPage = 1;
+let n3dTotalPages = 1;
+let n3dSelected = new Map();
+let n3dSearchTimer = null;
+
+function openN3D() {
+  n3dSelected.clear();
+  const saved = localStorage.getItem('n3d_key');
+  if (saved) { n3dApiKey = saved; document.getElementById('n3d-key-input').value = saved; }
+  document.getElementById('n3d-modal').style.display = '';
+  if (n3dApiKey) n3dLoadPage(1);
+}
+function closeN3D() { document.getElementById('n3d-modal').style.display = 'none'; }
+
+async function n3dFetch(path, method, body) {
+  if (!window.electronAPI) return { ok: false, error: 'N3D import requires the desktop app.' };
+  return await window.electronAPI.n3dRequest(path, method||'GET', body||null, n3dApiKey);
+}
+
+async function n3dConnect() {
+  const key = document.getElementById('n3d-key-input').value.trim();
+  if (!key) return;
+  n3dApiKey = key;
+  n3dShowStatus('connecting...', 'info');
+  const res = await n3dFetch('/version');
+  if (!res.ok) { n3dShowStatus('could not connect: ' + res.error, 'err'); n3dApiKey = ''; return; }
+  localStorage.setItem('n3d_key', key);
+  n3dShowStatus('', '');
+  document.getElementById('n3d-browser').style.display = '';
+  n3dLoadPage(1);
+}
+
+function n3dShowStatus(msg, type) {
+  const el = document.getElementById('n3d-status');
+  if (!msg) { el.style.display = 'none'; return; }
+  el.className = 'import-status ' + type;
+  el.textContent = msg; el.style.display = '';
+}
+
+function n3dDebounce() {
+  clearTimeout(n3dSearchTimer);
+  n3dSearchTimer = setTimeout(() => n3dLoadPage(1), 400);
+}
+
+async function n3dLoadPage(page) {
+  if (page < 1 || page > n3dTotalPages) return;
+  n3dPage = page;
+  const q = document.getElementById('n3d-search').value.trim();
+  const cat = document.getElementById('n3d-cat').value;
+  const profile = document.getElementById('n3d-profile').value;
+  let path = `/designs?page=${page}&limit=20&profile=${profile}`;
+  if (q) path += `&query=${encodeURIComponent(q)}`;
+  if (cat) path += `&category=${cat}`;
+  document.getElementById('n3d-grid').innerHTML = '<div style="grid-column:1/-1;padding:2rem;text-align:center;font-size:13px;color:var(--text2)">loading...</div>';
+  const res = await n3dFetch(path);
+  if (!res.ok) { n3dShowStatus('error: ' + res.error, 'err'); document.getElementById('n3d-grid').innerHTML = ''; return; }
+  n3dTotalPages = res.data.pagination.total_pages;
+  n3dRenderGrid(res.data.data, res.data.pagination);
+}
+
+let n3dDesignCache = new Map();
+
+function n3dRenderGrid(designs, pag) {
+  const grid = document.getElementById('n3d-grid');
+  if (!designs.length) { grid.innerHTML = '<div style="grid-column:1/-1;padding:2rem;text-align:center;font-size:13px;color:var(--text2)">no designs found</div>'; return; }
+
+  designs.forEach(d => n3dDesignCache.set(d.slug, d));
+  grid.innerHTML = '';
+
+  designs.forEach(d => {
+    const sel = n3dSelected.has(d.slug);
+    const swatches = (d.filaments||[]).slice(0,6).map(f =>
+      '<span style="width:11px;height:11px;border-radius:50%;background:' + n3dColour(f.color) + ';border:0.5px solid rgba(0,0,0,.2);display:inline-block;flex-shrink:0" title="' + f.color + '"></span>'
+    ).join('');
+
+    const card = document.createElement('div');
+    card.dataset.slug = d.slug;
+    card.style.cssText = 'background:var(--bg);border:' + (sel ? '2px solid #378add' : '0.5px solid var(--border2)') + ';border-radius:var(--radius-lg);overflow:hidden;cursor:pointer;transition:border-color .12s';
+    card.innerHTML =
+      (d.image_url
+        ? '<img src="' + d.image_url + '" style="width:100%;aspect-ratio:1;object-fit:cover;display:block;background:var(--bg2)" loading="lazy" onerror="this.style.display=\'none\'">'
+        : '<div style="width:100%;aspect-ratio:1;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text3)">no image</div>') +
+      '<div style="padding:10px 12px">' +
+        '<div style="display:flex;align-items:flex-start;justify-content:space-between;gap:4px">' +
+          '<div class="n3d-card-title" style="font-size:13px;font-weight:500;color:' + (sel ? 'var(--info-text)' : 'var(--text)') + ';line-height:1.3">' + esc(d.title) + '</div>' +
+          '<div class="n3d-card-check" style="width:16px;height:16px;border-radius:50%;background:var(--info-bg);border:2px solid #378add;display:' + (sel ? 'flex' : 'none') + ';align-items:center;justify-content:center;font-size:10px;color:#0c447c;flex-shrink:0">&#10003;</div>' +
+        '</div>' +
+        '<div style="font-size:11px;color:var(--text2);margin-top:3px">' + (d.print_time||'') + (d.total_weight_grams ? ' &middot; ' + d.total_weight_grams.toFixed(1) + 'g' : '') + '</div>' +
+        (swatches ? '<div style="display:flex;gap:3px;margin-top:6px;flex-wrap:wrap">' + swatches + '</div>' : '') +
+      '</div>';
+
+    card.addEventListener('click', (function(slug) {
+      return function() { n3dToggle(slug); };
+    })(d.slug));
+    grid.appendChild(card);
+  });
+
+  const pagEl = document.getElementById('n3d-pagination');
+  if (pag.total_pages > 1) {
+    pagEl.style.display = 'flex';
+    document.getElementById('n3d-page-info').textContent = 'page ' + pag.page + ' of ' + pag.total_pages + ' · ' + pag.total + ' designs';
+    document.getElementById('n3d-prev').disabled = !pag.has_prev;
+    document.getElementById('n3d-next').disabled = !pag.has_next;
+  } else { pagEl.style.display = 'none'; }
+  n3dUpdateBar();
+}
+
+function n3dToggle(slug) {
+  if (n3dSelected.has(slug)) n3dSelected.delete(slug);
+  else n3dSelected.set(slug, n3dDesignCache.get(slug));
+
+  const card = document.querySelector('[data-slug="' + slug + '"]');
+  if (card) {
+    const sel = n3dSelected.has(slug);
+    card.style.border = sel ? '2px solid #378add' : '0.5px solid var(--border2)';
+    const title = card.querySelector('.n3d-card-title');
+    const check = card.querySelector('.n3d-card-check');
+    if (title) title.style.color = sel ? 'var(--info-text)' : 'var(--text)';
+    if (check) check.style.display = sel ? 'flex' : 'none';
+  }
+  n3dUpdateBar();
+}
+
+
+function n3dUpdateBar() {
+  const bar = document.getElementById('n3d-sel-bar');
+  const n = n3dSelected.size;
+  bar.style.display = n > 0 ? 'flex' : 'none';
+  document.getElementById('n3d-sel-label').textContent = `${n} design${n!==1?'s':''} selected`;
+}
+
+async function n3dImportSelected() {
+  if (!n3dSelected.size) return;
+  const slugs = [...n3dSelected.keys()];
+  const profile = document.getElementById('n3d-profile').value;
+  n3dShowStatus(`fetching details for ${slugs.length} design${slugs.length!==1?'s':''}...`, 'info');
+  let designs;
+  try {
+    if (slugs.length === 1) {
+      const r = await n3dFetch(`/designs/${slugs[0]}?locale=AU`);
+      if (!r.ok) throw new Error(r.error);
+      designs = [r.data];
+    } else {
+      const r = await n3dFetch('/designs/batch', 'POST', { slugs, locale: 'AU' });
+      if (!r.ok) throw new Error(r.error);
+      designs = r.data.data;
+    }
+  } catch(e) { n3dShowStatus('fetch failed: ' + e.message, 'err'); return; }
+
+  let added = 0;
+  designs.forEach(d => {
+    const filaments = d.filaments || [];
+    const productName = d.title;
+    if (!products[productName]) {
+      products[productName] = { category: d.category || '' };
+      // Store N3D URL from slug
+      if (d.slug) products[productName].n3dUrl = 'https://www.n3dmelbourne.com/design/' + d.slug;
+      products[productName].designer = 'N3D Melbourne';
+      products[productName].source = 'patreon';
+      autoCreateProductFolder(productName);
+      // Download thumbnail from N3D
+      if (d.image_url && window.electronAPI && appSettings.threeMfFolder) {
+        window.electronAPI.getProductFolder(productName, appSettings.threeMfFolder).then(async folder => {
+          if (folder) {
+            const ext = d.image_url.split('.').pop().split('?')[0] || 'webp';
+            const result = await window.electronAPI.downloadImage(d.image_url, folder, 'cover.' + ext);
+            if (result && result.ok) { products[productName].imagePath = result.destPath; await persist(); render(); }
+          }
+        });
+      }
+    }
+    openProducts.add(productName);
+    if (filaments.length === 0) {
+      parts.push({ id:nextId++, name:productName, item:productName, variant:'', desc:d.pokemon?.description||'', colour:'#888888', colourName:'', stl:d.slug+'.3mf', qty:1, printed:0, status:'queue', reprints:0 });
+      added++;
+    } else {
+      filaments.forEach(f => {
+        parts.push({ id:nextId++, name:`${d.title} \u2014 ${f.color}`, item:productName, variant:'', desc:'', colour:n3dColour(f.color), colourName:f.color, stl:d.slug+'.3mf', qty:1, printed:0, status:'queue', reprints:0 });
+        added++;
+      });
+    }
+  });
+  await persist();
+  n3dSelected.clear();
+  n3dUpdateBar();
+  n3dShowStatus(`${added} part${added!==1?'s':''} added across ${designs.length} design${designs.length!==1?'s':''}!`, 'ok');
+  render();
+  n3dLoadPage(n3dPage);
+}
+
+function n3dColour(name) {
+  if (!name) return '#888888';
+  const n = name.toLowerCase();
+  const map = { 'black':'#1a1a1a','white':'#f0f0f0','red':'#e63946','blue':'#4a90d9','yellow':'#f4c542','green':'#639922','orange':'#f4833d','purple':'#7c6be0','pink':'#e98bbd','brown':'#8b5e3c','grey':'#888888','gray':'#888888','silver':'#c0c0c0','gold':'#d4af37','cyan':'#22b8cf','teal':'#1d9e75','navy':'#1a3a5c','cream':'#f5f0e8','beige':'#d4b896','coral':'#d85a30','lime':'#7ab83a','sakura':'#f4a7b9','indigo':'#534ab7','violet':'#7f77dd','magenta':'#d4537e' };
+  for (const [k,v] of Object.entries(map)) { if (n.includes(k)) return v; }
+  let h = 0; for (let i=0;i<name.length;i++) h = name.charCodeAt(i)+((h<<5)-h);
+  return '#'+((h&0xffffff)|0x404040).toString(16).padStart(6,'0').slice(0,6);
+}
+</script>
+
+<!-- N3D modal -->
+<div id="n3d-modal" style="display:none">
+  <div style="position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:200" onclick="if(event.target===this)closeN3D()">
+    <div style="background:var(--bg);border:0.5px solid var(--border2);border-radius:var(--radius-lg);width:860px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:0.5px solid var(--border);flex-shrink:0">
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:600;color:var(--text)">N3D Melbourne &mdash; design browser</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:2px">select designs to import directly into your tracker</div>
+        </div>
+        <button class="btn" onclick="closeN3D()">close</button>
+      </div>
+      <div style="padding:12px 20px;border-bottom:0.5px solid var(--border);display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <label style="font-size:12px;color:var(--text2);white-space:nowrap">API key</label>
+        <input id="n3d-key-input" type="password" placeholder="n3d_sk_..." autocomplete="off" style="flex:1;font-size:12px;font-family:monospace;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);outline:none"/>
+        <button class="btn btn-primary" onclick="n3dConnect()">connect</button>
+      </div>
+      <div id="n3d-status" class="import-status" style="display:none;margin:10px 20px 0;flex-shrink:0"></div>
+      <div id="n3d-browser" style="display:none;flex:1;overflow-y:auto;padding:14px 20px">
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+          <input id="n3d-search" type="text" placeholder="search designs..." oninput="n3dDebounce()" style="flex:1;min-width:140px;font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;outline:none"/>
+          <select id="n3d-cat" onchange="n3dLoadPage(1)" style="font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;cursor:pointer">
+            <option value="">all categories</option>
+            <option value="character">character</option>
+            <option value="standard">standard</option>
+          </select>
+          <select id="n3d-profile" style="font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;cursor:pointer">
+            <option value="ams">AMS profile</option>
+            <option value="split">split profile</option>
+            <option value="mc">MC profile</option>
+          </select>
+          <select id="n3d-colour-mode" style="font-size:13px;background:var(--bg2);border:0.5px solid var(--border2);border-radius:var(--radius);padding:6px 10px;color:var(--text);font-family:inherit;cursor:pointer" title="How to handle multiple filament colours">
+            <option value="together">colours on one part</option>
+            <option value="split">one part per colour</option>
+          </select>
+        </div>
+        <div id="n3d-sel-bar" style="display:none;align-items:center;gap:10px;padding:10px 14px;background:var(--green-bg);border:0.5px solid var(--green-border);border-radius:var(--radius-lg);margin-bottom:12px">
+          <span id="n3d-sel-label" style="font-size:13px;color:var(--green-dark);flex:1"></span>
+          <button class="btn btn-success" onclick="n3dImportSelected()">+ add to tracker</button>
+          <button class="btn" onclick="n3dSelected.clear();n3dUpdateBar();n3dLoadPage(n3dPage)">clear</button>
+        </div>
+        <div id="n3d-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;margin-bottom:12px"></div>
+        <div id="n3d-pagination" style="display:none;align-items:center;gap:8px;justify-content:center;padding-bottom:8px">
+          <button class="btn" id="n3d-prev" onclick="n3dLoadPage(n3dPage-1)">&#8592; prev</button>
+          <span id="n3d-page-info" style="font-size:13px;color:var(--text2)"></span>
+          <button class="btn" id="n3d-next" onclick="n3dLoadPage(n3dPage+1)">next &#8594;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

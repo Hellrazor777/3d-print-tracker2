@@ -554,9 +554,123 @@ function CameraModal({ device, storedIp, onSaveIp, onClose, isElectron }) {
   );
 }
 
+// ─── Inline camera feed ───────────────────────────────────────────────────────
+
+function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
+  const [on,       setOn]      = useState(!!storedIp);
+  const [frame,    setFrame]   = useState(null);
+  const [error,    setError]   = useState('');
+  const [ip,       setIp]      = useState(storedIp || '');
+  const [editing,  setEditing] = useState(!storedIp);
+  const [mjpegKey, setMjpegKey] = useState(0);
+
+  const accessCode = device.dev_access_code || device.access_code || '';
+  const mjpegUrl = ip
+    ? `/api/printers/camera/${serial}?ip=${encodeURIComponent(ip)}&code=${encodeURIComponent(accessCode)}`
+    : `/api/printers/camera/${serial}`;
+
+  const startEl = useCallback(async (useIp) => {
+    const trimmed = (useIp || ip).trim();
+    if (!trimmed) { setEditing(true); return; }
+    setError(''); setFrame(null);
+    const res = await window.electronAPI.printerBambuCameraStart(serial, trimmed, accessCode);
+    if (res?.error) { setError(res.error); setOn(false); }
+    else if (trimmed !== storedIp) onSaveIp(trimmed);
+  }, [serial, ip, accessCode, storedIp, onSaveIp]);
+
+  const stopEl = useCallback(() => {
+    if (window.electronAPI) window.electronAPI.printerBambuCameraStop(serial);
+    setFrame(null);
+  }, [serial]);
+
+  // Subscribe to frames (Electron only)
+  useEffect(() => {
+    if (!isElectron) return;
+    const unsub = window.electronAPI.onBambuCameraFrame((_, { serial: s, dataUrl, error: err }) => {
+      if (s !== serial) return;
+      if (err) { setError(err); setOn(false); return; }
+      if (dataUrl) { setFrame(dataUrl); setError(''); }
+    });
+    // Auto-start if IP already known
+    if (storedIp) startEl(storedIp);
+    return () => { stopEl(); unsub(); };
+  // eslint-disable-next-line
+  }, [serial, isElectron]);
+
+  const toggle = () => {
+    if (on) {
+      setOn(false);
+      if (isElectron) stopEl();
+    } else {
+      if (!ip.trim() && isElectron) { setEditing(true); setOn(false); return; }
+      setOn(true); setError('');
+      if (isElectron) startEl();
+      else setMjpegKey(k => k + 1);
+    }
+  };
+
+  return (
+    <div style={{ background: '#000', position: 'relative', minHeight: on ? 0 : 44 }}>
+      {/* Feed */}
+      {on && (
+        <>
+          {error ? (
+            <div style={{ padding: '18px 12px', fontSize: 11, color: '#ef4444', textAlign: 'center', lineHeight: 1.5 }}>
+              ⚠ {error}
+              <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Check IP and make sure printer is on your network</div>
+            </div>
+          ) : isElectron ? (
+            frame
+              ? <img src={frame} alt="Camera" style={{ width: '100%', display: 'block', maxHeight: 200, objectFit: 'contain' }} />
+              : <div style={{ padding: 24, fontSize: 11, color: '#666', textAlign: 'center' }}>Connecting…</div>
+          ) : (
+            <img key={mjpegKey} src={mjpegUrl} alt="Camera"
+              style={{ width: '100%', display: 'block', maxHeight: 200, objectFit: 'contain' }}
+              onError={() => setError('Could not connect to camera')} />
+          )}
+          {/* LIVE badge */}
+          {(frame || (!isElectron && on && !error)) && (
+            <div style={{ position: 'absolute', top: 6, right: 8, background: 'rgba(0,0,0,.6)', color: '#22c55e', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, letterSpacing: '0.05em' }}>● LIVE</div>
+          )}
+        </>
+      )}
+
+      {/* Control bar */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'rgba(0,0,0,.7)', position: on ? 'absolute' : 'relative', bottom: on ? 0 : undefined, left: on ? 0 : undefined, right: on ? 0 : undefined }}>
+        <span style={{ fontSize: 10, color: '#aaa', flex: 1 }}>📷</span>
+        {(editing || (!ip && isElectron)) && (
+          <input
+            className="input"
+            style={{ fontSize: 11, padding: '2px 6px', width: 130, background: '#1a1a1a', border: '0.5px solid #444', color: '#eee' }}
+            placeholder="Printer IP  192.168.x.x"
+            value={ip}
+            onChange={e => setIp(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && ip.trim()) {
+                setEditing(false); setOn(true); setError('');
+                if (isElectron) startEl(ip.trim());
+                else setMjpegKey(k => k + 1);
+              }
+            }}
+          />
+        )}
+        {ip && !editing && isElectron && (
+          <span style={{ fontSize: 10, color: '#888', cursor: 'pointer' }} title="Edit IP" onClick={() => { stopEl(); setOn(false); setEditing(true); }}>{ip}</span>
+        )}
+        <button
+          onClick={toggle}
+          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', background: on ? '#333' : '#1d4ed8', color: on ? '#aaa' : '#fff', fontWeight: 600 }}
+        >
+          {on ? '⏹ Stop' : '▶ Start'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Printer card ─────────────────────────────────────────────────────────────
 
-function PrinterCard({ device, state, onRefresh, onCameraClick, onPrintCmd, isElectron }) {
+function PrinterCard({ device, state, onRefresh, onCameraClick, storedIp, onSaveIp, onPrintCmd, isElectron }) {
   const [, setTick]     = useState(0);
   const [cmdBusy, setCmdBusy] = useState(false);
   const [cmdErr,  setCmdErr]  = useState('');
@@ -591,6 +705,15 @@ function PrinterCard({ device, state, onRefresh, onCameraClick, onPrintCmd, isEl
       background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 12,
       padding: 0, overflow: 'hidden',
     }}>
+      {/* Inline camera feed at top of card */}
+      <InlineCameraFeed
+        serial={device.dev_id}
+        device={device}
+        storedIp={storedIp}
+        onSaveIp={onSaveIp}
+        isElectron={isElectron}
+      />
+
       <div style={{ padding: '14px 16px 10px', borderBottom: '0.5px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--bg3, var(--bg))', border: '0.5px solid var(--border2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>
@@ -606,9 +729,6 @@ function PrinterCard({ device, state, onRefresh, onCameraClick, onPrintCmd, isEl
               background: isOffline ? 'var(--bg3, var(--bg))' : isPrinting ? 'rgba(34,197,94,.15)' : 'var(--bg3, var(--bg))',
               color: stateColor(gstate), border: `0.5px solid ${stateColor(gstate)}44`,
             }}>{stateLabel(gstate)}</span>
-            {onCameraClick && (
-              <button className="btn" style={{ padding: '2px 8px', fontSize: 11, color: 'var(--accent, #5b8dee)' }} title="View camera" onClick={onCameraClick}>📷</button>
-            )}
             <button className="btn" style={{ padding: '2px 8px', fontSize: 11 }} title="Refresh status" onClick={onRefresh}>↻</button>
           </div>
         </div>
@@ -1199,8 +1319,6 @@ function AddSnapmakerPanel({ existingPrinters, onSave, onClose }) {
   const [name,  setName]  = useState('');
   const [step,  setStep]  = useState('form'); // 'form' | 'connecting' | 'waiting' | 'error'
   const [err,   setErr]   = useState('');
-  const [token, setToken] = useState('');
-
   const buildPrinter = (tok) => ({
     id: `snap_${Date.now()}`,
     type: 'snapmaker',
@@ -1216,7 +1334,6 @@ function AddSnapmakerPanel({ existingPrinters, onSave, onClose }) {
     try {
       const res = await window.electronAPI.printerSnapConnectReq(ip.trim());
       if (res?.token) {
-        setToken(res.token);
         setStep('waiting'); // token received — printer confirmed
         const printer = buildPrinter(res.token);
         onSave([...existingPrinters, printer], printer);
@@ -1299,7 +1416,6 @@ export default function PrintersView() {
   const [webDevices, setWebDevices] = useState([]);
 
   const [showAddSnap,  setShowAddSnap]  = useState(false);
-  const [cameraSerial, setCameraSerial] = useState(null);
 
   // SSE connection for web mode
   useEffect(() => {
@@ -1474,7 +1590,8 @@ export default function PrintersView() {
                 state={state}
                 isElectron={isElectron}
                 onRefresh={() => handleRefreshBambu(serial)}
-                onCameraClick={() => setCameraSerial(serial)}
+                storedIp={bambuAuth?.cameraIps?.[serial] || ''}
+                onSaveIp={(newIp) => handleSaveCameraIp(serial, newIp)}
                 onPrintCmd={(cmd) => handleBambuPrintCmd(serial, cmd)}
               />
             );
@@ -1519,20 +1636,6 @@ export default function PrintersView() {
           isElectron={isElectron}
         />
       )}
-
-      {/* Camera feed modal */}
-      {cameraSerial && (() => {
-        const dev = bambuDevices.find(d => d.dev_id === cameraSerial);
-        return dev ? (
-          <CameraModal
-            device={dev}
-            storedIp={bambuAuth?.cameraIps?.[cameraSerial] || ''}
-            onSaveIp={(newIp) => handleSaveCameraIp(cameraSerial, newIp)}
-            onClose={() => setCameraSerial(null)}
-            isElectron={isElectron}
-          />
-        ) : null;
-      })()}
 
       {isElectron && showAddSnap && (
         <AddSnapmakerPanel

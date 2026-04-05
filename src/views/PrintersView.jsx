@@ -556,27 +556,29 @@ function CameraModal({ device, storedIp, onSaveIp, onClose, isElectron }) {
 
 // ─── Inline camera feed ───────────────────────────────────────────────────────
 
-function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
+function InlineCameraFeed({ serial, device, storedIp, storedCode, onSaveConfig, isElectron }) {
+  const deviceCode = device.dev_access_code || device.access_code || '';
   const [on,       setOn]      = useState(!!storedIp);
   const [frame,    setFrame]   = useState(null);
   const [error,    setError]   = useState('');
   const [ip,       setIp]      = useState(storedIp || '');
+  const [code,     setCode]    = useState(storedCode || deviceCode);
   const [editing,  setEditing] = useState(!storedIp);
   const [mjpegKey, setMjpegKey] = useState(0);
 
-  const accessCode = device.dev_access_code || device.access_code || '';
   const mjpegUrl = ip
-    ? `/api/printers/camera/${serial}?ip=${encodeURIComponent(ip)}&code=${encodeURIComponent(accessCode)}`
+    ? `/api/printers/camera/${serial}?ip=${encodeURIComponent(ip)}&code=${encodeURIComponent(code)}`
     : `/api/printers/camera/${serial}`;
 
-  const startEl = useCallback(async (useIp) => {
-    const trimmed = (useIp || ip).trim();
-    if (!trimmed) { setEditing(true); return; }
+  const startEl = useCallback(async (useIp, useCode) => {
+    const trimmedIp   = (useIp   || ip).trim();
+    const trimmedCode = (useCode || code).trim();
+    if (!trimmedIp) { setEditing(true); return; }
     setError(''); setFrame(null);
-    const res = await window.electronAPI.printerBambuCameraStart(serial, trimmed, accessCode);
+    const res = await window.electronAPI.printerBambuCameraStart(serial, trimmedIp, trimmedCode);
     if (res?.error) { setError(res.error); setOn(false); }
-    else if (trimmed !== storedIp) onSaveIp(trimmed);
-  }, [serial, ip, accessCode, storedIp, onSaveIp]);
+    else if (trimmedIp !== storedIp || trimmedCode !== storedCode) onSaveConfig(trimmedIp, trimmedCode);
+  }, [serial, ip, code, storedIp, storedCode, onSaveConfig]);
 
   const stopEl = useCallback(() => {
     if (window.electronAPI) window.electronAPI.printerBambuCameraStop(serial);
@@ -591,8 +593,7 @@ function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
       if (err) { setError(err); setOn(false); return; }
       if (dataUrl) { setFrame(dataUrl); setError(''); }
     });
-    // Auto-start if IP already known
-    if (storedIp) startEl(storedIp);
+    if (storedIp) startEl(storedIp, storedCode || deviceCode);
     return () => { stopEl(); unsub(); };
   // eslint-disable-next-line
   }, [serial, isElectron]);
@@ -609,6 +610,13 @@ function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
     }
   };
 
+  const applyConfig = () => {
+    if (!ip.trim()) return;
+    setEditing(false); setOn(true); setError('');
+    if (isElectron) startEl(ip.trim(), code.trim());
+    else setMjpegKey(k => k + 1);
+  };
+
   return (
     <div style={{ background: '#000', position: 'relative', minHeight: on ? 0 : 44 }}>
       {/* Feed */}
@@ -617,7 +625,7 @@ function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
           {error ? (
             <div style={{ padding: '18px 12px', fontSize: 11, color: '#ef4444', textAlign: 'center', lineHeight: 1.5 }}>
               ⚠ {error}
-              <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Check IP and make sure printer is on your network</div>
+              <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Check IP / access code and make sure printer is on your network</div>
             </div>
           ) : isElectron ? (
             frame
@@ -628,49 +636,61 @@ function InlineCameraFeed({ serial, device, storedIp, onSaveIp, isElectron }) {
               style={{ width: '100%', display: 'block', maxHeight: 200, objectFit: 'contain' }}
               onError={() => setError('Could not connect to camera')} />
           )}
-          {/* LIVE badge */}
           {(frame || (!isElectron && on && !error)) && (
             <div style={{ position: 'absolute', top: 6, right: 8, background: 'rgba(0,0,0,.6)', color: '#22c55e', fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, letterSpacing: '0.05em' }}>● LIVE</div>
           )}
         </>
       )}
 
-      {/* Control bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'rgba(0,0,0,.7)', position: on ? 'absolute' : 'relative', bottom: on ? 0 : undefined, left: on ? 0 : undefined, right: on ? 0 : undefined }}>
-        <span style={{ fontSize: 10, color: '#aaa', flex: 1 }}>📷</span>
-        {(editing || (!ip && isElectron)) && (
+      {/* Config inputs — shown when no IP yet or editing */}
+      {editing && (
+        <div style={{ display: 'flex', gap: 4, padding: '6px 10px', background: 'rgba(0,0,0,.85)', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             className="input"
-            style={{ fontSize: 11, padding: '2px 6px', width: 130, background: '#1a1a1a', border: '0.5px solid #444', color: '#eee' }}
-            placeholder="Printer IP  192.168.x.x"
+            style={{ fontSize: 11, padding: '3px 6px', flex: 2, minWidth: 110, background: '#1a1a1a', border: '0.5px solid #444', color: '#eee' }}
+            placeholder="IP  192.168.x.x"
             value={ip}
             onChange={e => setIp(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && ip.trim()) {
-                setEditing(false); setOn(true); setError('');
-                if (isElectron) startEl(ip.trim());
-                else setMjpegKey(k => k + 1);
-              }
-            }}
+            onKeyDown={e => { if (e.key === 'Enter') applyConfig(); }}
           />
-        )}
-        {ip && !editing && isElectron && (
-          <span style={{ fontSize: 10, color: '#888', cursor: 'pointer' }} title="Edit IP" onClick={() => { stopEl(); setOn(false); setEditing(true); }}>{ip}</span>
-        )}
-        <button
-          onClick={toggle}
-          style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', background: on ? '#333' : '#1d4ed8', color: on ? '#aaa' : '#fff', fontWeight: 600 }}
-        >
-          {on ? '⏹ Stop' : '▶ Start'}
-        </button>
-      </div>
+          <input
+            className="input"
+            style={{ fontSize: 11, padding: '3px 6px', flex: 2, minWidth: 90, background: '#1a1a1a', border: '0.5px solid #444', color: '#eee', fontFamily: 'monospace' }}
+            placeholder="Access code"
+            value={code}
+            onChange={e => setCode(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') applyConfig(); }}
+          />
+          <button onClick={applyConfig}
+            style={{ fontSize: 10, padding: '3px 10px', borderRadius: 4, border: 'none', cursor: 'pointer', background: '#1d4ed8', color: '#fff', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            ▶ Start
+          </button>
+        </div>
+      )}
+
+      {/* Control bar — shown when not editing */}
+      {!editing && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: 'rgba(0,0,0,.7)', position: on ? 'absolute' : 'relative', bottom: on ? 0 : undefined, left: on ? 0 : undefined, right: on ? 0 : undefined }}>
+          <span style={{ fontSize: 10, color: '#aaa', flex: 1 }}>📷</span>
+          {ip && (
+            <span style={{ fontSize: 10, color: '#888', cursor: 'pointer' }} title="Edit IP / access code"
+              onClick={() => { if (isElectron) stopEl(); setOn(false); setEditing(true); }}>
+              {ip}
+            </span>
+          )}
+          <button onClick={toggle}
+            style={{ fontSize: 10, padding: '2px 8px', borderRadius: 4, border: 'none', cursor: 'pointer', background: on ? '#333' : '#1d4ed8', color: on ? '#aaa' : '#fff', fontWeight: 600 }}>
+            {on ? '⏹ Stop' : '▶ Start'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 // ─── Printer card ─────────────────────────────────────────────────────────────
 
-function PrinterCard({ device, state, onRefresh, onCameraClick, storedIp, onSaveIp, onPrintCmd, isElectron }) {
+function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveConfig, onPrintCmd, isElectron }) {
   const [, setTick]     = useState(0);
   const [cmdBusy, setCmdBusy] = useState(false);
   const [cmdErr,  setCmdErr]  = useState('');
@@ -710,7 +730,8 @@ function PrinterCard({ device, state, onRefresh, onCameraClick, storedIp, onSave
         serial={device.dev_id}
         device={device}
         storedIp={storedIp}
-        onSaveIp={onSaveIp}
+        storedCode={storedCode}
+        onSaveConfig={onSaveConfig}
         isElectron={isElectron}
       />
 
@@ -1473,8 +1494,8 @@ export default function PrintersView() {
     await saveBambuAuth(null);
   }, [saveBambuAuth, isElectron]);
 
-  const handleSaveCameraIp = useCallback(async (serial, newIp) => {
-    const cameraIps = { ...(bambuAuth?.cameraIps || {}), [serial]: newIp };
+  const handleSaveCameraConfig = useCallback(async (serial, newIp, newCode) => {
+    const cameraIps = { ...(bambuAuth?.cameraIps || {}), [serial]: { ip: newIp, accessCode: newCode } };
     await saveBambuAuth({ ...bambuAuth, cameraIps });
   }, [bambuAuth, saveBambuAuth]);
 
@@ -1590,8 +1611,9 @@ export default function PrintersView() {
                 state={state}
                 isElectron={isElectron}
                 onRefresh={() => handleRefreshBambu(serial)}
-                storedIp={bambuAuth?.cameraIps?.[serial] || ''}
-                onSaveIp={(newIp) => handleSaveCameraIp(serial, newIp)}
+                storedIp={bambuAuth?.cameraIps?.[serial]?.ip || (typeof bambuAuth?.cameraIps?.[serial] === 'string' ? bambuAuth.cameraIps[serial] : '')}
+                storedCode={bambuAuth?.cameraIps?.[serial]?.accessCode || ''}
+                onSaveConfig={(newIp, newCode) => handleSaveCameraConfig(serial, newIp, newCode)}
                 onPrintCmd={(cmd) => handleBambuPrintCmd(serial, cmd)}
               />
             );

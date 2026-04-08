@@ -3,6 +3,13 @@ import { useApp } from '../context/AppContext';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
+// Format a Bambu HMS error object { attr, code } into the standard HMS_XXXX_XXXX_XXXX_XXXX string
+function fmtHmsCode(h) {
+  const a = ((h.attr >>> 0) & 0xFFFFFFFF).toString(16).padStart(8, '0').toUpperCase();
+  const c = ((h.code >>> 0) & 0xFFFFFFFF).toString(16).padStart(8, '0').toUpperCase();
+  return `HMS_${a.slice(0, 4)}_${a.slice(4)}_${c.slice(0, 4)}_${c.slice(4)}`;
+}
+
 function fmtTime(minutes) {
   if (!minutes || minutes <= 0) return '—';
   const h = Math.floor(minutes / 60), m = minutes % 60;
@@ -825,6 +832,18 @@ function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveCon
           <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 8 }}>Idle</div>
         )}
 
+        {/* HMS errors */}
+        {state?.hms && state.hms.length > 0 && (
+          <div style={{ marginBottom: 8, padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '0.5px solid rgba(239,68,68,.35)', borderRadius: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--red-text, #ef4444)', marginBottom: 4 }}>⚠ HMS Error{state.hms.length > 1 ? 's' : ''}</div>
+            {state.hms.map((h, i) => (
+              <div key={i} style={{ fontSize: 11, color: 'var(--red-text, #ef4444)', fontFamily: 'monospace' }}>
+                {fmtHmsCode(h)}
+              </div>
+            ))}
+          </div>
+        )}
+
         {state && !isOffline && (
           <div style={{ display: 'flex', justifyContent: 'space-around', paddingTop: 8, borderTop: '0.5px solid var(--border)' }}>
             <TempGauge label="Nozzle" current={state.nozzle_temp ?? 0} target={state.nozzle_target ?? 0} />
@@ -1426,7 +1445,11 @@ function AddSnapmakerPanel({ existingPrinters, onSave, onClose }) {
   );
 }
 
+// ─── Main view ────────────────────────────────────────────────────────────────
+
 // ─── Cloud relay panel ────────────────────────────────────────────────────────
+// Shows when running as Electron.  Lets the user start/stop the relay that
+// streams LAN camera footage to the cloud server.
 
 function CloudRelayPanel({ appSettings, saveAppSettings }) {
   const [relayConnected, setRelayConnected] = useState(false);
@@ -1439,6 +1462,7 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
   const savedUrl   = appSettings.cloudApiUrl   || '';
   const savedToken = appSettings.cameraRelayToken || '';
 
+  // Subscribe to relay status events from the main process
   useEffect(() => {
     if (!window.electronAPI?.onCameraRelayStatus) return;
     const unsub = window.electronAPI.onCameraRelayStatus((_, status) => {
@@ -1446,6 +1470,7 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
       if (!status.connected) setRelayError(status.error || '');
       else setRelayError('');
     });
+    // Read current status on mount
     window.electronAPI.cameraRelayStatus?.().then(s => {
       setRelayActive(s.active);
       setRelayConnected(s.connected);
@@ -1457,6 +1482,7 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
     const url   = urlInput.trim()   || savedUrl;
     const token = tokenInput.trim() || savedToken;
     if (!url || !token) { setEditing(true); return; }
+    // Persist to settings if they've changed
     if (url !== savedUrl || token !== savedToken) {
       await saveAppSettings({ ...appSettings, cloudApiUrl: url, cameraRelayToken: token });
     }
@@ -1471,7 +1497,10 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
     setRelayConnected(false);
   }, []);
 
-  const dot = relayConnected ? '#22c55e' : relayActive ? '#f59e0b' : 'var(--text2)';
+  const dot = relayConnected
+    ? '#22c55e'
+    : relayActive ? '#f59e0b' : 'var(--text2)';
+
   const configured = !!(savedUrl && savedToken);
 
   return (
@@ -1495,6 +1524,7 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
           }
         </div>
       </div>
+
       {editing && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
@@ -1518,6 +1548,7 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
           </div>
         </div>
       )}
+
       {!editing && relayConnected && (
         <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
           Camera feeds are live on your cloud dashboard. Open a printer camera to begin streaming.
@@ -1531,8 +1562,6 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
     </div>
   );
 }
-
-// ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function PrintersView() {
   const { appSettings, printerStatus: electronStatus, bambuConn: electronConn, saveBambuAuth, saveSnapmakerPrinters, saveAppSettings, isElectron } = useApp();

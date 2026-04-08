@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 
-// ── Storage helpers (Electron IPC → cloud API → localStorage fallback) ──
+// ── Storage helpers (Electron IPC or localStorage fallback) ──
 const isElectron = !!window.electronAPI;
 
 // Convert a local file path to a localfile:// URL served by Electron's custom
@@ -15,58 +15,21 @@ export function localFileUrl(filePath) {
   return 'localfile:///' + p;
 }
 
-// ── Cloud API base URL ──
-// Electron desktop: reads VITE_API_URL env var (set to the deployed Replit URL)
-// Web/mobile: uses relative /api paths (proxied in dev, same origin in prod)
-const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL)
-  ? import.meta.env.VITE_API_URL.replace(/\/$/, '')
-  : '';
-
-async function apiFetch(path, options) {
-  const res = await fetch(API_BASE + path, options);
-  if (!res.ok) throw new Error('API error ' + res.status);
-  return res.json();
-}
-
 async function loadData() {
-  if (isElectron && !import.meta.env?.VITE_API_URL) return await window.electronAPI.loadData();
-  try {
-    return await apiFetch('/api/data?t=' + Date.now());
-  } catch {
-    try { return JSON.parse(localStorage.getItem('3dp_data')); } catch { return null; }
-  }
+  if (isElectron) return await window.electronAPI.loadData();
+  try { return JSON.parse(localStorage.getItem('3dp_data')); } catch { return null; }
 }
 async function saveData(data) {
-  if (isElectron && !import.meta.env?.VITE_API_URL) return await window.electronAPI.saveData(data);
-  try {
-    await apiFetch('/api/data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-  } catch {
-    localStorage.setItem('3dp_data', JSON.stringify(data));
-  }
+  if (isElectron) return await window.electronAPI.saveData(data);
+  localStorage.setItem('3dp_data', JSON.stringify(data));
 }
 async function loadSettings() {
-  if (isElectron && !import.meta.env?.VITE_API_URL) return await window.electronAPI.loadSettings();
-  try {
-    return await apiFetch('/api/settings?t=' + Date.now());
-  } catch {
-    try { return JSON.parse(localStorage.getItem('3dp_settings')); } catch { return null; }
-  }
+  if (isElectron) return await window.electronAPI.loadSettings();
+  try { return JSON.parse(localStorage.getItem('3dp_settings')); } catch { return null; }
 }
 async function saveSettingsStorage(s) {
-  if (isElectron && !import.meta.env?.VITE_API_URL) return await window.electronAPI.saveSettings(s);
-  try {
-    await apiFetch('/api/settings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(s),
-    });
-  } catch {
-    localStorage.setItem('3dp_settings', JSON.stringify(s));
-  }
+  if (isElectron) return await window.electronAPI.saveSettings(s);
+  localStorage.setItem('3dp_settings', JSON.stringify(s));
 }
 
 const SAMPLE_PARTS = [
@@ -96,6 +59,7 @@ export function AppProvider({ children }) {
   const [printerStatus, setPrinterStatus] = useState({});   // serial/id → state
   const [bambuConn, setBambuConn] = useState({ connected: false, connecting: false });
   const [currentView, setCurrentView] = useState('product');
+  const [lastMovedProduct, setLastMovedProduct] = useState(null); // product name that just changed section
   const [sliceFilter, setSliceFilter] = useState('all');
   const [productSearch, setProductSearch] = useState('');
   const [openProducts, setOpenProducts] = useState(new Set());
@@ -134,12 +98,7 @@ export function AppProvider({ children }) {
     async function init() {
       const saved = await loadData();
       let initParts, initProducts, initInventory, initNextId;
-      const hasSavedData = saved && (
-        (saved.parts && saved.parts.length > 0) ||
-        (saved.products && Object.keys(saved.products).length > 0) ||
-        (saved.inventory && saved.inventory.length > 0)
-      );
-      if (hasSavedData) {
+      if (saved) {
         initParts = saved.parts || [];
         initProducts = saved.products || {};
         initInventory = saved.inventory || [];
@@ -370,6 +329,10 @@ export function AppProvider({ children }) {
   }, [nextId, appSettings.threeMfFolder, closeModal]);
 
   const setPartStatus = useCallback(async (partId, newStatus) => {
+    // Record the product this part belongs to so ProductView can scroll to it after re-render
+    const movedPart = partsRef.current.find(p => p.id === partId);
+    if (movedPart?.item) setLastMovedProduct(movedPart.item);
+
     let newParts, newProducts;
     setParts(prev => {
       newParts = prev.map(p => {
@@ -630,7 +593,6 @@ export function AppProvider({ children }) {
       await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
     }, 0);
     closeModal();
-    setCurrentView('inventory');
   }, [closeModal, getStorageLocations, syncStorageLocs]);
 
   const confirmQuickAdd = useCallback(async (productName, qty, locations) => {
@@ -1122,7 +1084,7 @@ export function AppProvider({ children }) {
     currentView, sliceFilter, setSliceFilter, productSearch, setProductSearch,
     openProducts, catExpanded, colourExpanded, invExpanded, invSectionCollapsed,
     invLogQty, setInvLogQty, invLogDest, setInvLogDest, localIP, modal, loaded,
-    printerStatus, bambuConn,
+    printerStatus, bambuConn, lastMovedProduct, setLastMovedProduct,
     // Helpers
     getCategoryOrder, getStorageLocations, getOutgoingDests, getItems, isReady, productHas3mf, invOnHand, invMigrateStorage,
     // UI

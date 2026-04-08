@@ -23,11 +23,33 @@ import RenameCatModal from './modals/RenameCatModal';
 import FilamentLibraryModal from './modals/FilamentLibraryModal';
 import PartsBoxCheckModal from './modals/PartsBoxCheckModal';
 
+// Detect if this window was opened as a pop-out for a specific view
+const popoutView = new URLSearchParams(window.location.search).get('popout');
+
 export default function App() {
   const { currentView, loaded, modal } = useApp();
 
   if (!loaded) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text2)', fontSize: 14 }}>loading…</div>;
+  }
+
+  // Pop-out mode: full-window view with just a slim title bar, no nav or stats
+  if (popoutView === 'printers') {
+    return (
+      <>
+        <div className="titlebar" style={{ display: 'flex', alignItems: 'center' }}>
+          <span className="titlebar-title">Printers</span>
+          <button
+            onClick={() => window.electronAPI?.openMainWindow()}
+            title="Open main window"
+            style={{ marginLeft: 'auto', marginRight: 8, fontSize: 11, padding: '2px 10px', borderRadius: 'var(--radius, 6px)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', cursor: 'pointer', fontFamily: 'inherit' }}
+          >⌂ Main window</button>
+        </div>
+        <div className="main">
+          <PrintersView />
+        </div>
+      </>
+    );
   }
 
   return (

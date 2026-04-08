@@ -1,7 +1,7 @@
 import { useApp } from '../context/AppContext';
 
 export default function TopBar() {
-  const { currentView, setView, openModal, exportData } = useApp();
+  const { currentView, setView, openModal, exportData, isElectron } = useApp();
 
   return (
     <div className="topbar">
@@ -12,6 +12,14 @@ export default function TopBar() {
         <button id="vb-colours"   className={`view-btn${currentView === 'colours'   ? ' active' : ''}`} onClick={() => setView('colours')}>Colour</button>
         <button id="vb-inventory" className={`view-btn${currentView === 'inventory' ? ' active' : ''}`} onClick={() => setView('inventory')}>Inventory</button>
         <button id="vb-printers" className={`view-btn${currentView === 'printers' ? ' active' : ''}`} onClick={() => setView('printers')}>Printers</button>
+        {isElectron && (
+          <button
+            className="view-btn popout-btn"
+            onClick={() => window.electronAPI.openPrintersPopout()}
+            title="Open Printers in a separate window"
+            style={{ padding: '0 7px', fontSize: 13 }}
+          >⧉</button>
+        )}
       </div>
       <button className="btn" onClick={() => openModal('settings')} title="settings">⚙ Settings</button>
       <button className="btn btn-n3d" onClick={() => openModal('n3d')}>N3D Browse</button>

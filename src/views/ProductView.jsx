@@ -9,7 +9,21 @@ export default function ProductView() {
     openProducts, catExpanded, isReady, getCategoryOrder,
     openModal, toggleProduct, toggleCat, archiveProduct, togglePreSliced,
     openProductFolder, openProductInSlicer, uploadProduct3mf, uploadProductImage, openExternalUrl, isElectron,
+    lastMovedProduct, setLastMovedProduct,
   } = useApp();
+
+  // After a part status change causes a product to move sections, scroll it into view
+  useEffect(() => {
+    if (!lastMovedProduct) return;
+    const id = `product-card-${lastMovedProduct.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    // Use rAF so the DOM has fully updated before we scroll
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(id);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setLastMovedProduct(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [lastMovedProduct, setLastMovedProduct]);
 
   const [toast, setToast] = useState('');
   useEffect(() => {
@@ -34,6 +48,8 @@ export default function ProductView() {
     }
   };
 
+  const [productSort, setProductSort] = useState('az');
+
   // Include all non-archived products — even ones with no parts yet (so newly added products are visible)
   const items = [...new Set([
     ...Object.keys(products).filter(k => !products[k]?.archived),
@@ -54,15 +70,43 @@ export default function ProductView() {
     parts.some(p => p.item === i && p.name.toLowerCase().includes(q))
   ) : sliceFiltered;
 
+  // Sorter — applied within each bucket/category
+  const sortItems = (arr) => {
+    const copy = [...arr];
+    if (productSort === 'az') return copy.sort((a, b) => a.localeCompare(b));
+    if (productSort === 'za') return copy.sort((a, b) => b.localeCompare(a));
+    // Natural numeric sort — treats embedded numbers as numbers so "Part 2" < "Part 10"
+    const natCmp = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    if (productSort === 'num-asc')  return copy.sort((a, b) => natCmp(a, b));
+    if (productSort === 'num-desc') return copy.sort((a, b) => natCmp(b, a));
+    if (productSort === 'parts') {
+      return copy.sort((a, b) => {
+        const pa = parts.filter(p => p.item === a).length;
+        const pb = parts.filter(p => p.item === b).length;
+        return pb - pa || a.localeCompare(b);
+      });
+    }
+    if (productSort === 'progress') {
+      return copy.sort((a, b) => {
+        const pa = parts.filter(p => p.item === a);
+        const pb = parts.filter(p => p.item === b);
+        const pctA = pa.length ? pa.filter(p => p.status === 'done').length / pa.length : 0;
+        const pctB = pb.length ? pb.filter(p => p.status === 'done').length / pb.length : 0;
+        return pctB - pctA || a.localeCompare(b);
+      });
+    }
+    return copy;
+  };
+
   // Bucket items
-  const printingItems = filteredItems.filter(item => parts.filter(p => p.item === item).some(p => p.status === 'printing'));
-  const readyItems = filteredItems.filter(item => isReady(item));
-  const commencedItems = filteredItems.filter(item => {
+  const printingItems = sortItems(filteredItems.filter(item => parts.filter(p => p.item === item).some(p => p.status === 'printing')));
+  const readyItems = sortItems(filteredItems.filter(item => isReady(item)));
+  const commencedItems = sortItems(filteredItems.filter(item => {
     if (isReady(item)) return false;
     const ps = parts.filter(p => p.item === item);
     if (ps.some(p => p.status === 'printing')) return false;
     return ps.some(p => p.status === 'done');
-  });
+  }));
   const activeItems = [...printingItems, ...commencedItems, ...readyItems];
   const otherItems = filteredItems.filter(i => !activeItems.includes(i));
 
@@ -102,10 +146,21 @@ export default function ProductView() {
           <button key={f.val} className={`pill${sliceFilter === f.val ? ' active' : ''}`} onClick={() => setSliceFilter(f.val)}>{f.label}</button>
         ))}
         <span style={{ fontSize: 12, color: 'var(--text2)', marginLeft: 4 }}>{preSlicedCount} pre-sliced · {slicedCount}/{allItems2.length} have 3MF</span>
+        <select
+          value={productSort} onChange={e => setProductSort(e.target.value)}
+          style={{ fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', marginLeft: 'auto', cursor: 'pointer' }}
+        >
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="num-asc">1 → 9</option>
+          <option value="num-desc">9 → 1</option>
+          <option value="parts">Most parts</option>
+          <option value="progress">Most progress</option>
+        </select>
         <input
           type="search" placeholder="search products…" value={productSearch}
           onChange={e => setProductSearch(e.target.value)}
-          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', width: 160, fontFamily: 'inherit', outline: 'none', marginLeft: 'auto' }}
+          style={{ fontSize: 12, padding: '4px 10px', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', width: 160, fontFamily: 'inherit', outline: 'none' }}
         />
       </div>
 
@@ -115,7 +170,7 @@ export default function ProductView() {
       {commencedItems.length > 0 && <Section title="commenced" titleColor="var(--blue-text)" items={commencedItems} defaultOpen catExpanded={catExpanded} toggleCat={toggleCat} openProducts={openProducts} toggleProduct={toggleProduct} parts={parts} products={products} isReady={isReady} appSettings={appSettings} openModal={openModal} archiveProduct={archiveProduct} togglePreSliced={togglePreSliced} openProductFolder={openProductFolder} openProductInSlicer={openProductInSlicer} uploadProduct3mf={handle3mfUpload} uploadProductImage={uploadProductImage} openExternalUrl={openExternalUrl} isElectron={isElectron} />}
 
       {sortedCats.map(cat => (
-        <Section key={cat} title={cat} titleColor={null} items={cats[cat].sort((a, b) => a.localeCompare(b))} defaultOpen={false} catExpanded={catExpanded} toggleCat={toggleCat} openProducts={openProducts} toggleProduct={toggleProduct} parts={parts} products={products} isReady={isReady} appSettings={appSettings} openModal={openModal} archiveProduct={archiveProduct} togglePreSliced={togglePreSliced} openProductFolder={openProductFolder} openProductInSlicer={openProductInSlicer} uploadProduct3mf={handle3mfUpload} uploadProductImage={uploadProductImage} openExternalUrl={openExternalUrl} isElectron={isElectron} />
+        <Section key={cat} title={cat} titleColor={null} items={sortItems(cats[cat])} defaultOpen={false} catExpanded={catExpanded} toggleCat={toggleCat} openProducts={openProducts} toggleProduct={toggleProduct} parts={parts} products={products} isReady={isReady} appSettings={appSettings} openModal={openModal} archiveProduct={archiveProduct} togglePreSliced={togglePreSliced} openProductFolder={openProductFolder} openProductInSlicer={openProductInSlicer} uploadProduct3mf={handle3mfUpload} uploadProductImage={uploadProductImage} openExternalUrl={openExternalUrl} isElectron={isElectron} />
       ))}
 
       {activeItems.length === 0 && otherItems.length === 0 && (

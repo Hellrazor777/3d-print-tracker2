@@ -311,6 +311,7 @@ function parseBambuMsg(serial, payload) {
   if (s.ams           !== undefined) patch.ams            = s.ams;
   if (s.vt_tray       !== undefined) patch.vt_tray        = s.vt_tray;
   if (s.print_error   !== undefined) patch.error          = s.print_error;
+  if (s.hms           !== undefined) patch.hms            = s.hms; // Array of { attr, code } HMS error objects
   // Only meaningful if we got at least one real field beyond serial+ts
   return Object.keys(patch).length > 2 ? patch : null;
 }
@@ -327,7 +328,11 @@ let currentAuth = null;
 let cleanupCalled = false;
 let pushallTimer = null; // periodic status refresh
 
-function send(ch, d) { if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(ch, d); }
+function send(ch, d) {
+  // Broadcast to all open windows (main + any popouts like the printers popout)
+  const { BrowserWindow } = require('electron');
+  BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.webContents.send(ch, d); });
+}
 
 // ─── Bambu MQTT ───────────────────────────────────────────────────────────────
 

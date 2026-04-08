@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const { getData, saveData, saveSettings, updateInventoryItem } = require('./db');
 const printers = require('./printers');
+const cameraRelay = require('./camera-relay');
 
 const app = express();
 const PORT = process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === 'production' ? 5000 : 8080);
@@ -35,6 +36,11 @@ printers.emitter.on('bambu-token-refreshed', ({ auth }) => {
     const next = { ...settings, bambuAuth: { ...settings.bambuAuth, ...auth } };
     saveSettings(next).catch(() => {});
   }).catch(() => {});
+});
+
+// Forward relay status changes to SSE so the browser can update its UI
+cameraRelay.emitter.on('relay-status', (state) => {
+  sseWrite('camera-relay-status', { ...state, activeSerials: cameraRelay.getActiveSerials() });
 });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -172,6 +178,8 @@ app.get('/api/printers/events', (req, res) => {
   for (const [serial, state] of Object.entries(printerStates)) {
     res.write(`event: printer-update\ndata: ${JSON.stringify({ serial, state })}\n\n`);
   }
+  // Send current relay status
+  res.write(`event: camera-relay-status\ndata: ${JSON.stringify({ connected: cameraRelay.isConnected(), activeSerials: cameraRelay.getActiveSerials() })}\n\n`);
 
   // Heartbeat
   const hb = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
@@ -332,10 +340,26 @@ app.get('/api/printers/camera-creds/:serial', async (req, res) => {
   }
 });
 
+// ─── Camera relay status ──────────────────────────────────────────────────────
+// Quick poll endpoint for clients that want relay state without SSE.
+
+app.get('/api/camera-relay/status', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    connected: cameraRelay.isConnected(),
+    activeSerials: cameraRelay.getActiveSerials(),
+    configured: !!(process.env.CAMERA_RELAY_TOKEN),
+  });
+});
+
 // ─── Camera MJPEG proxy ───────────────────────────────────────────────────────
 // Streams live JPEG frames from a Bambu printer as a standard MJPEG stream.
-// Works when the server has local-network access to the printer (same LAN).
-// The browser simply uses <img src="/api/printers/camera/SERIAL?ip=...&code=...">
+//
+// Priority:
+//   1. Desktop relay (works from anywhere — desktop must be running)
+//   2. Direct LAN connection (works only when server is on same LAN as printers)
+//
+// Browser usage:  <img src="/api/printers/camera/SERIAL">
 
 app.get('/api/printers/camera/:serial', (req, res) => {
   const { serial } = req.params;
@@ -349,8 +373,61 @@ app.get('/api/printers/camera/:serial', (req, res) => {
     code = code || dev?.dev_access_code || dev?.access_code || '';
   }
 
+  // ── Option 1: Serve frames from the desktop relay ─────────────────────────
+  // The desktop Electron app connects to the LAN cameras and pushes frames here
+  // via WebSocket.  This works from anywhere — no server-side LAN access needed.
+  if (cameraRelay.isConnected()) {
+    res.set({
+      'Content-Type': 'multipart/x-mixed-replace; boundary=frame',
+      'Cache-Control': 'no-store',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.flushHeaders();
+
+    let closed = false;
+
+    function writeFrame(frame) {
+      if (closed) return;
+      try {
+        res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+        res.write(frame);
+        res.write('\r\n');
+      } catch { closed = true; }
+    }
+
+    // Immediately send the latest cached frame so there's no blank period
+    const cached = cameraRelay.getLatestFrame(serial);
+    if (cached) writeFrame(cached);
+
+    const onFrame = (s, frame) => { if (s === serial) writeFrame(frame); };
+    const onRelayDisconnect = ({ connected }) => {
+      if (!connected) {
+        closed = true;
+        cameraRelay.emitter.off('frame', onFrame);
+        cameraRelay.emitter.off('relay-status', onRelayDisconnect);
+        try { res.end(); } catch {}
+      }
+    };
+
+    cameraRelay.emitter.on('frame', onFrame);
+    cameraRelay.emitter.on('relay-status', onRelayDisconnect);
+
+    req.on('close', () => {
+      closed = true;
+      cameraRelay.emitter.off('frame', onFrame);
+      cameraRelay.emitter.off('relay-status', onRelayDisconnect);
+    });
+
+    return;
+  }
+
+  // ── Option 2: Direct LAN connection ──────────────────────────────────────
+  // Only works when the server itself is on the same network as the printer.
   if (!ip) {
-    return res.status(400).json({ error: 'Printer IP not found. Provide ?ip=192.168.x.x&code=ACCESS_CODE' });
+    return res.status(503).json({
+      error: 'Camera not available. Open the desktop app on the same network as your printers to enable live camera relay.',
+    });
   }
 
   res.set({
@@ -403,6 +480,16 @@ if (process.env.NODE_ENV === 'production') {
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
 const server = app.listen(PORT, HOST, async () => {
   console.log(`API server running on http://${HOST}:${PORT}`);
+
+  // Attach camera relay WebSocket server to the same HTTP server.
+  // Token comes from CAMERA_RELAY_TOKEN env var.
+  cameraRelay.attach(server, () => process.env.CAMERA_RELAY_TOKEN);
+  if (process.env.CAMERA_RELAY_TOKEN) {
+    console.log('[camera-relay] Relay endpoint ready at /api/camera-relay');
+  } else {
+    console.log('[camera-relay] CAMERA_RELAY_TOKEN not set — relay disabled');
+  }
+
   // Auto-reconnect Bambu if stored auth exists
   try {
     const { settings } = await getData();

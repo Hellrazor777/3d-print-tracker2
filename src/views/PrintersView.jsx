@@ -1426,6 +1426,112 @@ function AddSnapmakerPanel({ existingPrinters, onSave, onClose }) {
   );
 }
 
+// ─── Cloud relay panel ────────────────────────────────────────────────────────
+
+function CloudRelayPanel({ appSettings, saveAppSettings }) {
+  const [relayConnected, setRelayConnected] = useState(false);
+  const [relayActive,    setRelayActive]    = useState(false);
+  const [relayError,     setRelayError]     = useState('');
+  const [editing,        setEditing]        = useState(false);
+  const [urlInput,       setUrlInput]       = useState('');
+  const [tokenInput,     setTokenInput]     = useState('');
+
+  const savedUrl   = appSettings.cloudApiUrl   || '';
+  const savedToken = appSettings.cameraRelayToken || '';
+
+  useEffect(() => {
+    if (!window.electronAPI?.onCameraRelayStatus) return;
+    const unsub = window.electronAPI.onCameraRelayStatus((_, status) => {
+      setRelayConnected(!!status.connected);
+      if (!status.connected) setRelayError(status.error || '');
+      else setRelayError('');
+    });
+    window.electronAPI.cameraRelayStatus?.().then(s => {
+      setRelayActive(s.active);
+      setRelayConnected(s.connected);
+    }).catch(() => {});
+    return unsub;
+  }, []);
+
+  const handleStart = useCallback(async () => {
+    const url   = urlInput.trim()   || savedUrl;
+    const token = tokenInput.trim() || savedToken;
+    if (!url || !token) { setEditing(true); return; }
+    if (url !== savedUrl || token !== savedToken) {
+      await saveAppSettings({ ...appSettings, cloudApiUrl: url, cameraRelayToken: token });
+    }
+    await window.electronAPI.cameraRelayStart(url, token);
+    setRelayActive(true);
+    setEditing(false);
+  }, [urlInput, tokenInput, savedUrl, savedToken, appSettings, saveAppSettings]);
+
+  const handleStop = useCallback(async () => {
+    await window.electronAPI.cameraRelayStop();
+    setRelayActive(false);
+    setRelayConnected(false);
+  }, []);
+
+  const dot = relayConnected ? '#22c55e' : relayActive ? '#f59e0b' : 'var(--text2)';
+  const configured = !!(savedUrl && savedToken);
+
+  return (
+    <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'inline-block', flexShrink: 0 }} />
+          <span style={{ fontWeight: 600, fontSize: 13 }}>Cloud Camera Relay</span>
+          <span style={{ fontSize: 12, color: 'var(--text2)' }}>
+            {relayConnected ? '— streaming to cloud' : relayActive ? '— connecting…' : configured ? '— stopped' : '— not configured'}
+          </span>
+          {relayError && <span style={{ fontSize: 11, color: 'var(--red-text, #ef4444)' }}>{relayError}</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button className="btn" style={{ fontSize: 12 }} onClick={() => { setUrlInput(savedUrl); setTokenInput(savedToken); setEditing(e => !e); }}>
+            {editing ? 'Cancel' : 'Configure'}
+          </button>
+          {relayActive
+            ? <button className="btn" style={{ fontSize: 12, color: 'var(--red-text, #ef4444)' }} onClick={handleStop}>Stop relay</button>
+            : <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleStart}>Start relay</button>
+          }
+        </div>
+      </div>
+      {editing && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+            Enter your cloud server URL and relay token (set <code>CAMERA_RELAY_TOKEN</code> in your Render env vars).
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              style={{ flex: 2, minWidth: 180, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)' }}
+              placeholder="https://your-app.onrender.com"
+              value={urlInput}
+              onChange={e => setUrlInput(e.target.value)}
+            />
+            <input
+              style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'var(--bg)', color: 'var(--text)' }}
+              placeholder="Relay token"
+              type="password"
+              value={tokenInput}
+              onChange={e => setTokenInput(e.target.value)}
+            />
+            <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleStart}>Save & Start</button>
+          </div>
+        </div>
+      )}
+      {!editing && relayConnected && (
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
+          Camera feeds are live on your cloud dashboard. Open a printer camera to begin streaming.
+        </div>
+      )}
+      {!editing && !relayConnected && !relayActive && configured && (
+        <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text2)' }}>
+          Start the relay to make your printer camera feeds viewable from the cloud.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main view ────────────────────────────────────────────────────────────────
 
 export default function PrintersView() {
@@ -1592,6 +1698,11 @@ export default function PrintersView() {
           )}
         </div>
       </div>
+
+      {/* Cloud camera relay — desktop only */}
+      {isElectron && (
+        <CloudRelayPanel appSettings={appSettings} saveAppSettings={saveAppSettings} />
+      )}
 
       {/* Bambu login — shown when not connected */}
       {!hasBambu && (

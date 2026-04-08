@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   loadSettings:        ()                          => ipcRenderer.invoke('load-settings'),
   saveSettings:        (s)                         => ipcRenderer.invoke('save-settings', s),
+  isUsingCloud:        ()                          => ipcRenderer.invoke('is-using-cloud'),
+  pushLocalToCloud:    ()                          => ipcRenderer.invoke('push-local-to-cloud'),
   pick3mfFolder:       ()                          => ipcRenderer.invoke('pick-3mf-folder'),
   upload3mf:           (productName, destFolder)   => ipcRenderer.invoke('upload-3mf', { productName, destFolder }),
   openFolder:          (folderPath)                => ipcRenderer.invoke('open-folder', folderPath),
@@ -40,6 +42,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onBambuCameraFrame: (cb) => {
     ipcRenderer.on('printer-camera-frame', cb);
     return () => ipcRenderer.removeListener('printer-camera-frame', cb);
+  },
+  // Camera relay — streams LAN camera frames to the cloud server
+  cameraRelayStart:  (cloudApiUrl, token) => ipcRenderer.invoke('camera-relay-start', { cloudApiUrl, token }),
+  cameraRelayStop:   ()                   => ipcRenderer.invoke('camera-relay-stop'),
+  cameraRelayStatus: ()                   => ipcRenderer.invoke('camera-relay-status'),
+  onCameraRelayStatus: (cb) => {
+    ipcRenderer.on('camera-relay-status', cb);
+    return () => ipcRenderer.removeListener('camera-relay-status', cb);
   },
   printerSnapConnectReq:    (ip)                       => ipcRenderer.invoke('printer-snap-connect-request', { ip }),
   printerSnapStart:         (printer)                  => ipcRenderer.invoke('printer-snap-start', { printer }),

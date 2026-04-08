@@ -23,3 +23,7 @@ services:
       - key: DATABASE_URL
         sync: false     # set this manually in the Render dashboard after deploy
                         # value: your Supabase connection string (see .env.example)
+      - key: CAMERA_RELAY_TOKEN
+        sync: false     # optional — enables live camera relay from the desktop app
+                        # generate with: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+                        # then paste the same value into the desktop app's relay settings

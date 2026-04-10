@@ -18,7 +18,7 @@ This repo: `cyanidesugar/3d-print-tracker-v3`.
 ## Stack
 
 - **Frontend**: React 18, Vite 5, JSX, Context API (AppContext is the single source of truth)
-- **Backend**: Express 5 (`server/index.js`), Node 18+
+- **Backend**: Express 5 (`server/index.js`), Node 24
 - **Realtime**: Server-Sent Events (`GET /api/printers/events`) for printer state
 - **Camera**: WebSocket relay (`/api/camera-relay`) — desktop Electron pushes frames, server serves MJPEG
 - **DB**: Supabase Postgres (`DATABASE_URL` env var) or local `.local-data.json` fallback
@@ -28,26 +28,33 @@ This repo: `cyanidesugar/3d-print-tracker-v3`.
 
 ---
 
-## Current state (as of V3 start)
+## Current state (as of session 2)
 
 ### What works
 - Express server (`server/index.js`) — all REST endpoints functional
 - Supabase read/write via `server/db.js`
 - Bambu MQTT cloud + LAN via `server/printers.js`
 - Camera relay via `server/camera-relay.js`
-- React frontend renders, all views and modals present
+- React frontend renders, all views and modals wired to REST API
+- Web mode data persistence — AppContext uses fetch('/api/data') and fetch('/api/settings')
+- SSE wired in PrintersView for web mode printer state
+- Electron main.js + preload.js restored and working
+- All 7 audit phases complete (see git log)
+- RTSPS camera streaming for H2D, H2S, X1C, X1E, P2S via ffmpeg
+- Camera IP/access code persists across page refreshes (saved to bambuAuth.cameraIps[serial])
+- `npm run dev` working on Windows + Node 24
+- `npm run serve` for production local use
 
-### What is broken / not yet wired
-- **Electron mode**: `main.js` does not exist. Electron cannot launch. Needs to be created (port from V1).
-- **Frontend ↔ API**: `AppContext.jsx` and `PrintersView.jsx` still use `window.electronAPI.*` for
-  data load/save, printer connect, Bambu login, camera. The Express REST API exists but React
-  doesn't call it yet. Web mode falls back to `localStorage`.
-- **SSE not connected**: `AppContext` listens for `window.electronAPI.onPrinterUpdate` which never
-  fires in web mode. The SSE stream at `/api/printers/events` is not subscribed to by React.
+### Known remaining issues
+- `server/db.js` — Supabase UPSERT is fixed, but if 'default' row is ever manually deleted, saves fail silently
+- `AppContext.jsx` — filaments may be dropped from saveData in some edge paths (needs audit)
+- `src/main/ipc/files.js:280` — PowerShell injection in get-bambu-version (Electron only)
+- `window.confirm()`/`prompt()` still used in some places
+- subParts keyed by array index, not stable id
 
-### Dead code (delete immediately, no risk)
-- `src/js/*.js` (all 12 files) — not imported by React, not loaded by any HTML. Legacy vanilla JS.
-- Root `index.html` — inline vanilla JS shell, not loaded by anything (no main.js).
+### Dead code (safe to delete)
+- `src/js/*.js` (all 12 files) — legacy vanilla JS, not imported anywhere
+- Root `index.html` — legacy shell, not used
 
 ---
 
@@ -57,33 +64,30 @@ This repo: `cyanidesugar/3d-print-tracker-v3`.
 3d-print-tracker-v3/
 ├── server/
 │   ├── index.js          # Express app — all REST endpoints, SSE, camera MJPEG proxy
-│   ├── db.js             # Postgres UPSERT or local JSON fallback
-│   ├── printers.js       # Bambu MQTT, LAN, login, UDP discovery, print control
+│   ├── db.js             # Postgres UPSERT or local JSON fallback (.local-data.json)
+│   ├── printers.js       # Bambu MQTT, LAN, login, UDP discovery, print control, camera streaming
 │   └── camera-relay.js   # WebSocket relay: desktop→server→browser MJPEG
 ├── src/
 │   ├── index.html        # Vite entry (clean — only <div id="root">)
 │   ├── main.jsx          # React entry, StrictMode, AppContext provider
 │   ├── App.jsx           # View routing, modal rendering
 │   ├── context/
-│   │   └── AppContext.jsx # ALL app state, persistence, IPC/API wrappers (1119 lines)
+│   │   └── AppContext.jsx # ALL app state, persistence, IPC/API wrappers
 │   ├── views/            # ProductView, InventoryView, PrintersView, ColourView, ArchiveView
 │   ├── modals/           # 14 modal components
 │   ├── components/       # Stats, TopBar
 │   ├── lib/
 │   │   └── n3dClient.js  # N3D API: fetch-first, Electron IPC fallback
-│   ├── js/               # *** DEAD CODE — delete entire directory ***
-│   ├── main/             # Electron IPC handlers (data, files, n3d, printers) — keep for Electron mode
+│   ├── main/             # Electron IPC handlers (data, files, n3d, printers)
 │   └── styles/main.css
 ├── scripts/
 │   └── start-electron.js # Cross-platform dev launcher: API → Vite → Electron
+├── main.js               # Electron main process
+├── preload.js            # contextBridge for Electron IPC
 ├── render.yaml           # Render.com deployment config
 ├── supabase-schema.sql   # Run once in Supabase SQL editor
 ├── vite.config.js
-├── package.json          # version 3.0.0
-│
-│  (to create:)
-├── main.js               # Electron main process — port from cyanidesugar/3d-print-tracker
-└── preload.js            # Already exists — contextBridge for Electron IPC
+└── package.json
 ```
 
 ---
@@ -91,22 +95,91 @@ This repo: `cyanidesugar/3d-print-tracker-v3`.
 ## Commands
 
 ```bash
-# Web-only dev (API server + Vite, no Electron)
+# Development (API on :8080, Vite on :5000, hot reload)
 npm run dev
 
-# Electron dev (API server + Vite + Electron)
-node scripts/start-electron.js
+# Production local use — build once, then just serve
+npm run build:web       # compiles React → dist-web/
+npm run serve           # starts server in prod mode → http://localhost:5000
 
-# Production web build (for Render.com)
-npm run build:cloud
+# Production web build (for Render.com / Cloudflare Pages)
+npm run build:cloud     # sets VITE_BASE_URL=/ for absolute paths
+
+# Electron dev
+node scripts/start-electron.js
 
 # Lint
 npm run lint
 npm run lint:fix
 
-# Build desktop EXE (after main.js is restored)
+# Build desktop EXE
 npm run build
 ```
+
+---
+
+## Node v24 / Express 5 compatibility
+
+`app.listen()` in Express 5 drops its HTTP server handle from the Node v24 event loop, causing
+the process to exit immediately with code 0. Always use:
+
+```javascript
+const server = http.createServer(app);
+server.listen(PORT, HOST, () => { ... });
+```
+
+Never use `app.listen()` directly.
+
+---
+
+## Windows dev script
+
+`concurrently` on Windows must use direct node commands, not `npm:script` references. The npm
+wrapper process exits after spawning the child, which triggers concurrently's `-k` kill-all.
+
+```json
+"dev": "concurrently -k -n API,WEB -c green,cyan \"node server/index.js\" \"node node_modules/vite/bin/vite.js\""
+```
+
+---
+
+## Camera streaming — Bambu printer protocol split
+
+Two completely different protocols depending on printer generation:
+
+| Models | Protocol | Port | Notes |
+|--------|----------|------|-------|
+| P1S, P1P, A1, A1 Mini | Proprietary binary TCP+JPEG over TLS | 6000 | `streamCamera()` in printers.js |
+| X1C, X1E, H2D, H2S, P2S | RTSPS (H.264 via ffmpeg) | 322 | `streamCameraRtsp()` in printers.js |
+
+Detection: `isRtspPrinter(serial)` checks `dev_product_name` from the Bambu cloud device list
+against `RTSP_MODEL_RE = /\b(X1C?|X1E|H2D|H2S|P2S)\b/i`.
+
+### RTSPS stream URL
+```
+rtsps://bblp:<access_code>@<printer_ip>:322/streaming/live/1
+```
+
+### Printer-side requirement (H2D / H2S / P2S)
+Port 322 is closed by default. Must enable on each printer:
+> Settings → Network → LAN Only Liveview → ON
+(Separate from LAN Mode. Without it the port is closed and ffmpeg gets connection refused.)
+
+### ffmpeg
+Required for RTSPS streaming. Installed via winget (`Gyan.FFmpeg` package).
+`getFfmpeg()` in printers.js auto-locates it: checks PATH first, then the winget install
+directory (`%LOCALAPPDATA%\Microsoft\WinGet\Packages\Gyan.FFmpeg*`).
+
+### P2S reliability note
+The P2S RTSP implementation is flaky — only one concurrent connection is reliably served,
+and the first connection after a printer reboot is the most stable. Multiple connect/disconnect
+cycles can cause the stream to stop responding until the printer is rebooted. This is a Bambu
+firmware issue, not fixable in our code.
+
+### Camera IP persistence
+Camera IP and access code are saved to `bambuAuth.cameraIps[serial]` in settings when the
+user clicks Start. On refresh, `storedIp`/`storedCode` are restored and the stream auto-starts.
+The fix was in `InlineCameraFeed.applyConfig()` — web mode was not calling `onSaveConfig()`.
 
 ---
 
@@ -128,7 +201,7 @@ npm run build
 | POST | /api/printers/bambu/print-cmd | stop / pause / resume |
 | GET | /api/printers/bambu/tasks | Print history |
 | GET | /api/printers/camera-creds/:serial | Auto-fetch camera IP + access code |
-| GET | /api/printers/camera/:serial | Live MJPEG stream |
+| GET | /api/printers/camera/:serial | Live MJPEG stream (auto-routes port 6000 vs RTSPS) |
 | GET | /api/camera-relay/status | Relay connection status |
 | GET | /mobile | Mobile companion page |
 
@@ -147,37 +220,29 @@ npm run build
 
 ---
 
-## Known bugs to fix (from audit of V1/V2, all apply here)
+## Hosting options
 
-Priority order:
+### Local production (current)
+`npm run build:web` + `npm run serve` → http://localhost:5000
 
-### Immediate (data integrity)
-1. `server/db.js` — SQL `UPDATE` only, no INSERT. Fresh Supabase rows silently lost.
-2. `AppContext.jsx` — filaments dropped from saveData calls in multiple places.
-3. `AppContext.jsx:156` — saveSettingsStorage() inside React state updater (must be pure).
-4. `AppContext.jsx:263-289` — stale closure in reprint/saveCard write paths.
+### Remote access via Cloudflare Tunnel (recommended for LAN printer access)
+Run server locally, expose via tunnel so it's reachable from anywhere:
+```bash
+cloudflared tunnel --url http://localhost:5000
+```
+Can be mapped to a subdomain on cyanidesugar.com via named tunnel config.
+Best option because Bambu printers, MQTT, and ffmpeg all need LAN access.
 
-### Security
-5. `src/main/ipc/files.js:145` — path traversal: `..` not stripped from product folder names.
-6. `src/main/ipc/files.js:280` — PowerShell injection in get-bambu-version.
-7. `src/main/ipc/files.js:212` — no size limit on image download.
-8. `src/mobile.html` — XSS: user data interpolated directly into innerHTML.
+### Render.com (cloud, always-on)
+- `render.yaml` already configured
+- Set `DATABASE_URL` (Supabase) and optionally `CAMERA_RELAY_TOKEN` in Render env vars
+- Build: `npm run build:cloud`, start: `node server/index.js`
+- Camera streaming only works if the desktop app is running as a relay (no LAN access on Render)
 
-### Wiring (makes the app actually work in web mode)
-9. AppContext: replace electronAPI.loadData/saveData with fetch('/api/data') (dual-mode).
-10. AppContext: subscribe to SSE stream, dispatch events into React state.
-11. PrintersView: replace all electronAPI.printerBambu* calls with fetch('/api/printers/bambu/*').
-
-### UX
-12. `src/modals/AddInventoryModal.jsx` — never closes after save.
-13. No `:focus-visible` CSS.
-14. No click-outside or Escape to close modals.
-15. No Enter-to-submit on modal forms.
-16. window.confirm()/prompt() throughout.
-17. Toast shows ✓ on error messages.
-18. subParts keyed by array index, not stable id.
-19. Mobile: adjustStocktake overcounts built count.
-20. Mobile: outgoing destinations hardcoded.
+### Cloudflare Pages (frontend only)
+- Hosts the static frontend only — backend must run elsewhere (Render.com)
+- Build command: `npm run build:cloud`, output dir: `dist-web`
+- Frontend needs the Render API URL via env var
 
 ---
 
@@ -185,15 +250,3 @@ Priority order:
 
 Run `supabase-schema.sql` once in the Supabase SQL Editor. Creates `app_data` table with seeded
 'default' row. Then set `DATABASE_URL` env var to the Supabase connection string.
-
-Note: `server/db.js` currently uses bare `UPDATE` (not UPSERT). Until fixed, if the 'default' row
-is ever deleted from Supabase, all saves silently fail. Fix: use INSERT ... ON CONFLICT DO UPDATE.
-
----
-
-## Render.com deployment
-
-1. Connect GitHub repo in Render dashboard
-2. Render reads `render.yaml` automatically
-3. Set `DATABASE_URL` and (optionally) `CAMERA_RELAY_TOKEN` in Environment section
-4. Deploy — build runs `npm run build:cloud`, start runs `node server/index.js`

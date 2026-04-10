@@ -62,7 +62,7 @@ app.whenReady().then(() => {
   registerPrinterHandlers(ipcMain, mainWin, getSettings);
 
   // Local mobile companion HTTP server — accessible on LAN for phone access
-  startLocalServer(mobilePort, DATA_PATH, mainWin, (port) => { mobilePort = port; });
+  startLocalServer(mobilePort, DATA_PATH, SETTINGS_PATH, mainWin, (port) => { mobilePort = port; });
 
   // ── Pop-out windows ─────────────────────────────────────────────────────────
   ipcMain.handle('open-printers-popout', () => {

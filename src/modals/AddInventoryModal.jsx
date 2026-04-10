@@ -11,6 +11,7 @@ export default function AddInventoryModal() {
   const handleSave = async () => {
     if (!name.trim()) return;
     await addInventoryManual(name.trim(), parseInt(qty) || 0, cat.trim());
+    closeModal();
   };
 
   return (

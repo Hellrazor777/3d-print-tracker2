@@ -13,33 +13,17 @@ const path = require('path');
 
 const LOCAL_FILE = path.join(__dirname, '..', '.local-data.json');
 
-function localRead() {
+async function localRead() {
   try {
-    if (fs.existsSync(LOCAL_FILE)) return JSON.parse(fs.readFileSync(LOCAL_FILE, 'utf8'));
-  } catch {}
-  return { data: {}, settings: {} };
+    const txt = await fs.promises.readFile(LOCAL_FILE, 'utf8');
+    return JSON.parse(txt);
+  } catch { return { data: {}, settings: {} }; }
 }
 
-function localWrite(patch) {
-  const current = localRead();
-  fs.writeFileSync(LOCAL_FILE, JSON.stringify({ ...current, ...patch }, null, 2), 'utf8');
+async function localWrite(patch) {
+  const current = await localRead();
+  await fs.promises.writeFile(LOCAL_FILE, JSON.stringify({ ...current, ...patch }, null, 2), 'utf8');
 }
-
-const localDB = {
-  async getData()           { return localRead(); },
-  async saveData(data)      { localWrite({ data }); },
-  async saveSettings(s)     { localWrite({ settings: s }); },
-  async updateInventoryItem(item) {
-    const current = localRead();
-    const data = current.data || {};
-    if (!Array.isArray(data.inventory)) data.inventory = [];
-    const idx = data.inventory.findIndex(i => i && i.id === item.id);
-    if (idx > -1) data.inventory[idx] = { ...data.inventory[idx], ...item };
-    else data.inventory.push(item);
-    localWrite({ data });
-    return data;
-  },
-};
 
 // ─── PostgreSQL ───────────────────────────────────────────────────────────────
 
@@ -77,18 +61,20 @@ async function getData() {
     if (res.rows.length === 0) return { data: {}, settings: {} };
     return { data: res.rows[0].data || {}, settings: res.rows[0].settings || {} };
   }
-  return localRead();
+  return await localRead();
 }
 
 async function saveData(data) {
   await dbReadyPromise;
   if (usePostgres) {
     await pgPool.query(
-      "UPDATE app_data SET data = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+      `INSERT INTO app_data (id, data, updated_at)
+       VALUES ('default', $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = $1::jsonb, updated_at = NOW()`,
       [JSON.stringify(data)]
     );
   } else {
-    localWrite({ data });
+    await localWrite({ data });
   }
 }
 
@@ -96,11 +82,13 @@ async function saveSettings(settings) {
   await dbReadyPromise;
   if (usePostgres) {
     await pgPool.query(
-      "UPDATE app_data SET settings = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+      `INSERT INTO app_data (id, settings, updated_at)
+       VALUES ('default', $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE SET settings = $1::jsonb, updated_at = NOW()`,
       [JSON.stringify(settings)]
     );
   } else {
-    localWrite({ settings });
+    await localWrite({ settings });
   }
 }
 

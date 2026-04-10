@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function QuickAddModal() {
   const { modal, closeModal, confirmQuickAdd, getStorageLocations, appSettings } = useApp();
@@ -28,9 +29,7 @@ export default function QuickAddModal() {
   };
 
   return (
-    <div id="quick-add-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 360 }}>
+    <ModalShell onClose={closeModal} width={360}>
           <h3>Add to inventory</h3>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{productName}</p>
           <div className="field" style={{ marginBottom: 20 }}>
@@ -60,8 +59,6 @@ export default function QuickAddModal() {
             <button className="btn" onClick={closeModal}>cancel</button>
             <button className="btn btn-success" onClick={() => confirmQuickAdd(productName, qty, locations)}>Add to inventory</button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

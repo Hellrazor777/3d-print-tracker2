@@ -621,7 +621,10 @@ function InlineCameraFeed({ serial, device, storedIp, storedCode, onSaveConfig, 
     if (!ip.trim()) return;
     setEditing(false); setOn(true); setError('');
     if (isElectron) startEl(ip.trim(), code.trim());
-    else setMjpegKey(k => k + 1);
+    else {
+      setMjpegKey(k => k + 1);
+      if (ip.trim() !== storedIp || code.trim() !== storedCode) onSaveConfig(ip.trim(), code.trim());
+    }
   };
 
   return (

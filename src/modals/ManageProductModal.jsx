@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp, localFileUrl } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function ManageProductModal() {
   const { modal, closeModal, saveManageProduct, deleteProductPermanently, products, parts, getCategoryOrder, isElectron, appSettings } = useApp();
@@ -43,9 +44,7 @@ export default function ManageProductModal() {
   };
 
   return (
-    <div id="rename-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 300 }}>
+    <ModalShell onClose={closeModal} width={300}>
           <h3>Manage Product</h3>
           <div className="field"><label>product name</label><input value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
           <div className="field">
@@ -101,8 +100,6 @@ export default function ManageProductModal() {
               <button className="btn btn-primary" onClick={handleSave}>save</button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

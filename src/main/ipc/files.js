@@ -92,6 +92,17 @@ function downloadImageToPath(url, destPath, redirectCount = 0) {
         return;
       }
 
+      const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+      let received = 0;
+      res.on('data', chunk => {
+        received += chunk.length;
+        if (received > MAX_BYTES) {
+          file.destroy();
+          fs.unlink(destPath, () => {});
+          res.destroy();
+          reject(new Error('Image too large (> 10 MB)'));
+        }
+      });
       res.pipe(file);
       file.on('finish', () => {
         file.close(resolve);
@@ -142,9 +153,10 @@ module.exports = function registerFilesHandlers(ipcMain, mainWin, loadSettings) 
     if (result.canceled || !result.filePaths.length) return null;
     const srcPath = result.filePaths[0];
     const fileName = path.basename(srcPath);
-    const safeName = productName.replace(/[<>:"\/\\|?*]/g, '_');
+    const safeName = productName.replace(/[<>:"\/\\|?*]/g, '_').replace(/\.{2,}/g, '_');
     try {
-      const productFolder = path.join(destFolder, safeName);
+      const productFolder = path.resolve(path.join(destFolder, safeName));
+      if (!productFolder.startsWith(path.resolve(destFolder))) return { error: 'Invalid product name' };
       if (!fs.existsSync(productFolder)) fs.mkdirSync(productFolder, { recursive: true });
       const destPath = path.join(productFolder, fileName);
       fs.copyFileSync(srcPath, destPath);
@@ -277,12 +289,11 @@ module.exports = function registerFilesHandlers(ipcMain, mainWin, loadSettings) 
   // ── Get Bambu Studio version ──
   ipcMain.handle('get-bambu-version', async (_, exePath) => {
     if (!exePath || !fs.existsSync(exePath)) return null;
-    const safePath = exePath.replace(/'/g, "''");
     return new Promise(resolve => {
       execFile('powershell', [
         '-NoProfile', '-NonInteractive', '-Command',
-        `(Get-Item '${safePath}').VersionInfo.FileVersion`
-      ], { timeout: 8000 }, (err, stdout) => {
+        '(Get-Item -LiteralPath $env:BAMBU_EXE_PATH).VersionInfo.FileVersion'
+      ], { timeout: 8000, env: { ...process.env, BAMBU_EXE_PATH: exePath } }, (err, stdout) => {
         resolve(err ? null : (stdout.trim() || null));
       });
     });

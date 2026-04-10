@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 function esc(s) { return String(s || ''); }
 
@@ -63,9 +64,7 @@ export default function SettingsModal() {
 
 
   return (
-    <div id="settings-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal settings-modal">
+    <ModalShell onClose={closeModal} className="settings-modal">
           <div className="settings-header">
             <span className="settings-title">Settings</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
@@ -204,8 +203,6 @@ export default function SettingsModal() {
             <button className="btn" onClick={closeModal}>Cancel</button>
             <button className="btn btn-primary" onClick={handleSave}>Save</button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

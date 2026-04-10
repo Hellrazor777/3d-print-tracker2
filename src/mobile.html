@@ -172,6 +172,7 @@
 
 <script>
 let inventory = [];
+let outgoingDests = ['store', 'markets', 'website'];
 let expandedId = null;
 let logQty = 1;
 let selectedDest = 'store';
@@ -184,9 +185,17 @@ let builtDelta = 0;
 
 async function reload() {
   try {
-    const res = await fetch('/api/data?t=' + Date.now(), { cache: 'no-store' });
-    const data = await res.json();
+    const [dataRes, settingsRes] = await Promise.all([
+      fetch('/api/data?t=' + Date.now(), { cache: 'no-store' }),
+      fetch('/api/settings?t=' + Date.now(), { cache: 'no-store' }),
+    ]);
+    const data = await dataRes.json();
+    const settings = await settingsRes.json();
     inventory = data.inventory || [];
+    if (settings.outgoingDests?.length) {
+      outgoingDests = settings.outgoingDests;
+      if (!outgoingDests.includes(selectedDest)) selectedDest = outgoingDests[0];
+    }
     document.getElementById('last-sync').textContent = 'updated ' + new Date().toLocaleTimeString();
     if (appMode === 'stocktake') renderStocktake();
     else renderList();
@@ -298,12 +307,18 @@ async function adjustStocktake(id, delta) {
   if (!item || !stocktakeLocation) return;
   if (!item.storage) item.storage = {};
   const newVal = Math.max(0, (item.storage[stocktakeLocation]||0) + delta);
-  const diff = newVal - (item.storage[stocktakeLocation]||0);
   item.storage[stocktakeLocation] = newVal;
-  item.built = Math.max(0, (item.built||0) + diff);
+  // Derive built from total storage + total distributed so on-hand stays consistent
+  const totalOut = (item.distributions||[]).reduce((a,d) => a + (d.qty||0), 0);
+  const totalStorage = Object.values(item.storage).reduce((a,v) => a + (v||0), 0);
+  item.built = totalStorage + totalOut;
   const el = document.getElementById('st-' + id);
   if (el) el.textContent = newVal;
   await saveItem(item);
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 function renderList() {
@@ -320,8 +335,8 @@ function renderList() {
     card.innerHTML = `
       <div class="inv-card-header" onclick="toggleCard('${item.id}')">
         <div style="flex:1">
-          <div class="inv-name">${item.name}</div>
-          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+item.location+'</div>' : ''}
+          <div class="inv-name">${esc(item.name)}</div>
+          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+esc(item.location)+'</div>' : ''}
         </div>
         <div style="text-align:right">
           <div class="inv-onhand ${onHand===0?'zero':''}">${onHand}</div>
@@ -348,8 +363,8 @@ function renderDetail(item, onHand) {
 
   const histRows = (item.distributions||[]).slice().reverse().map((d,i) => `
     <div class="dist-item">
-      <span class="dist-item-dest dest-${d.dest}">${d.dest}</span>
-      <span class="dist-item-note">${d.note||''}</span>
+      <span class="dist-item-dest dest-${esc(d.dest)}">${esc(d.dest)}</span>
+      <span class="dist-item-note">${esc(d.note||'')}</span>
       <span class="dist-item-qty">-${d.qty}</span>
       <button class="dist-del" onclick="removeDist('${item.id}',${(item.distributions.length-1-i)})">&#x2715;</button>
     </div>`).join('');
@@ -359,7 +374,7 @@ function renderDetail(item, onHand) {
       <div class="summary-pill"><div class="val">${item.built||0}</div><div class="lbl">built</div></div>
       <div class="summary-pill"><div class="val">${totalOut}</div><div class="lbl">out</div></div>
       <div class="summary-pill"><div class="val" style="color:var(--green)">${onHand}</div><div class="lbl">on hand</div></div>
-      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${v||0}</div><div class="lbl">${k.toLowerCase()}</div></div>`).join('')}
+      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${v||0}</div><div class="lbl">${esc(k.toLowerCase())}</div></div>`).join('')}
     </div>
 
     <div class="count-row" onclick="openBuiltPopup('${item.id}')" style="cursor:pointer">
@@ -378,12 +393,12 @@ function renderDetail(item, onHand) {
     ${Object.keys(item.storage||{}).map(loc => `
     <div class="count-row" style="margin-bottom:12px">
       <div>
-        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${loc}</div>
+        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${esc(loc)}</div>
       </div>
       <div class="count-ctrl">
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',-1)">−</button>
-        <div class="count-val editable-val" id="mob-${loc}-${item.id}" onclick="editNum(this, ${(item.storage||{})[loc]||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); item.storage['${loc}']=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!=='${loc}'); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage['${loc}']); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+'${item.id}'); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${(item.storage||{})[loc]||0}</div>
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',1)">+</button>
+        <button class="count-btn" onclick="adjustLocation('${item.id}','${esc(loc)}',-1)">−</button>
+        <div class="count-val editable-val" id="mob-${esc(loc)}-${item.id}" onclick="editNum(this, ${(item.storage||{})[loc]||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); item.storage['${esc(loc)}']=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!=='${esc(loc)}'); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage['${esc(loc)}']); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+'${item.id}'); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${(item.storage||{})[loc]||0}</div>
+        <button class="count-btn" onclick="adjustLocation('${item.id}','${esc(loc)}',1)">+</button>
       </div>
     </div>`).join('')}
     <div style="border-top:0.5px solid var(--border);margin:4px 0 16px"></div>
@@ -395,9 +410,7 @@ function renderDetail(item, onHand) {
       </div>
       <div id="outgoing-body-${item.id}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
         <div class="dest-btns">
-          <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
-          <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
-          <button class="dest-btn ${selectedDest==='website'?'active':''}" onclick="selectDest('website')"><span class="dest-icon">🌐</span>website</button>
+          ${outgoingDests.map(dest => `<button class="dest-btn ${selectedDest===dest?'active':''}" onclick="selectDest('${esc(dest)}')">${esc(dest)}</button>`).join('')}
         </div>
         <div class="log-row">
           <div class="log-qty-ctrl">

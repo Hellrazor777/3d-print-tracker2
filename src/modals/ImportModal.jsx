@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 function esc(s) { return String(s || ''); }
 
@@ -156,9 +157,7 @@ export default function ImportModal() {
   };
 
   return (
-    <div id="import-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 520 }}>
+    <ModalShell onClose={closeModal} width={520}>
           <h3>Import CSV</h3>
 
           {status.msg && (
@@ -215,8 +214,6 @@ export default function ImportModal() {
               <button className="btn btn-primary" onClick={handleImport}>Import</button>
             )}
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

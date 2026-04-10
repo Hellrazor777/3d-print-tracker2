@@ -135,7 +135,8 @@ class MqttTls extends EventEmitter {
   }
   connect({ host, port = 8883, clientId, username, password, keepalive = 60 }) {
     this._ka = keepalive;
-    this.socket = tls.connect({ host, port, rejectUnauthorized: false });
+    // Bambu cloud MQTT uses a valid public certificate — verify it.
+    this.socket = tls.connect({ host, port });
     this.socket.on('secureConnect', () => this.socket.write(buildConnect(clientId, username, password, keepalive)));
     this.socket.on('data', d => { this._buf = Buffer.concat([this._buf, d]); this._drain(); });
     this.socket.on('error', e => { if (!this._dead) this.emit('error', e); });
@@ -542,6 +543,8 @@ function streamCamera(ip, accessCode, res, onError) {
   let socket = null;
 
   try {
+    // Bambu LAN camera (port 6000) uses a proprietary self-signed certificate —
+    // rejectUnauthorized must stay false here or LAN streaming breaks.
     socket = tls.connect({ host: ip, port: 6000, rejectUnauthorized: false });
   } catch (e) {
     onError(e.message);

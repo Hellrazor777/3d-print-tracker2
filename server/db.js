@@ -53,7 +53,7 @@ async function initDB() {
     const { Pool } = require('pg');
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : true, // Supabase/Render use valid certs
       connectionTimeoutMillis: 3000,
     });
     await pool.query('SELECT 1');

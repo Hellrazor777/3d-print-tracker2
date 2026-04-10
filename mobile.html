@@ -171,6 +171,13 @@
 </div>
 
 <script>
+// ── HTML escaping helpers ─────────────────────────────────────────────────────
+function esc(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function js(v) { return JSON.stringify(String(v ?? '')); }
+
 let inventory = [];
 let parts = [];
 let products = {};
@@ -359,10 +366,10 @@ function renderList() {
     const card = document.createElement('div');
     card.className = 'inv-card';
     card.innerHTML = `
-      <div class="inv-card-header" onclick="toggleCard('${item.id}')">
+      <div class="inv-card-header" onclick="toggleCard(${js(item.id)})">
         <div style="flex:1">
-          <div class="inv-name">${item.name}</div>
-          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+item.location+'</div>' : ''}
+          <div class="inv-name">${esc(item.name)}</div>
+          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+esc(item.location)+'</div>' : ''}
         </div>
         <div style="text-align:right">
           <div class="inv-onhand ${onHand===0?'zero':''}">${onHand}</div>
@@ -389,10 +396,10 @@ function renderDetail(item, onHand) {
 
   const histRows = (item.distributions||[]).slice().reverse().map((d,i) => `
     <div class="dist-item">
-      <span class="dist-item-dest dest-${d.dest}">${d.dest}</span>
-      <span class="dist-item-note">${d.note||''}</span>
-      <span class="dist-item-qty">-${d.qty}</span>
-      <button class="dist-del" onclick="removeDist('${item.id}',${(item.distributions.length-1-i)})">&#x2715;</button>
+      <span class="dist-item-dest dest-${esc(d.dest)}">${esc(d.dest)}</span>
+      <span class="dist-item-note">${esc(d.note||'')}</span>
+      <span class="dist-item-qty">-${Number(d.qty)||0}</span>
+      <button class="dist-del" onclick="removeDist(${js(item.id)},${(item.distributions.length-1-i)})">&#x2715;</button>
     </div>`).join('');
 
   return `
@@ -400,10 +407,10 @@ function renderDetail(item, onHand) {
       <div class="summary-pill"><div class="val">${item.built||0}</div><div class="lbl">built</div></div>
       <div class="summary-pill"><div class="val">${totalOut}</div><div class="lbl">out</div></div>
       <div class="summary-pill"><div class="val" style="color:var(--green)">${onHand}</div><div class="lbl">on hand</div></div>
-      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${v||0}</div><div class="lbl">${k.toLowerCase()}</div></div>`).join('')}
+      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${Number(v)||0}</div><div class="lbl">${esc(k.toLowerCase())}</div></div>`).join('')}
     </div>
 
-    <div class="count-row" onclick="openBuiltPopup('${item.id}')" style="cursor:pointer">
+    <div class="count-row" onclick="openBuiltPopup(${js(item.id)})" style="cursor:pointer">
       <div>
         <div style="font-size:14px;font-weight:500">built count</div>
         <div class="count-label">tap to update</div>
@@ -419,22 +426,22 @@ function renderDetail(item, onHand) {
     ${Object.keys(item.storage||{}).map(loc => `
     <div class="count-row" style="margin-bottom:12px">
       <div>
-        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${loc}</div>
+        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${esc(loc)}</div>
       </div>
       <div class="count-ctrl">
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',-1)">−</button>
-        <div class="count-val editable-val" id="mob-${loc}-${item.id}" onclick="editNum(this, ${(item.storage||{})[loc]||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); item.storage['${loc}']=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!=='${loc}'); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage['${loc}']); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+'${item.id}'); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${(item.storage||{})[loc]||0}</div>
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',1)">+</button>
+        <button class="count-btn" onclick="adjustLocation(${js(item.id)},${js(loc)},-1)">−</button>
+        <div class="count-val editable-val" id="mob-${esc(loc)}-${esc(item.id)}" onclick="editNum(this, ${Number((item.storage||{})[loc])||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); const loc=${js(loc)}; item.storage[loc]=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!==loc); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage[loc]); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+${js(item.id)}); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${Number((item.storage||{})[loc])||0}</div>
+        <button class="count-btn" onclick="adjustLocation(${js(item.id)},${js(loc)},1)">+</button>
       </div>
     </div>`).join('')}
     <div style="border-top:0.5px solid var(--border);margin:4px 0 16px"></div>
 
     <div class="dist-section">
-      <div class="dist-title" onclick="toggleOutgoing('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+      <div class="dist-title" onclick="toggleOutgoing(${js(item.id)})" style="display:flex;align-items:center;cursor:pointer;user-select:none">
         <span style="flex:1">log outgoing</span>
         <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${outgoingCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
       </div>
-      <div id="outgoing-body-${item.id}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
+      <div id="outgoing-body-${esc(item.id)}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
         <div class="dest-btns">
           <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
           <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
@@ -446,19 +453,19 @@ function renderDetail(item, onHand) {
             <div class="log-qty-val editable-val" onclick="editNum(this, logQty, (v)=>{ logQty=Math.max(1,v); document.querySelectorAll('.log-qty-val').forEach(el=>el.textContent=logQty); document.querySelectorAll('.log-submit').forEach(b=>b.textContent='log '+logQty+' to '+selectedDest); })" title="tap to edit">${logQty}</div>
             <button class="log-qty-btn" onclick="adjustLogQty(1)">+</button>
           </div>
-          <input class="log-note" id="log-note-${item.id}" placeholder="note (optional)"/>
+          <input class="log-note" id="log-note-${esc(item.id)}" placeholder="note (optional)"/>
         </div>
-        <button class="log-submit" onclick="logDistribution('${item.id}')">log ${logQty} to ${selectedDest}</button>
+        <button class="log-submit" onclick="logDistribution(${js(item.id)})">log ${logQty} to ${esc(selectedDest)}</button>
       </div>
     </div>
 
     ${histRows ? `
     <div class="dist-history">
-      <div class="dist-hist-title" onclick="toggleHistory('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+      <div class="dist-hist-title" onclick="toggleHistory(${js(item.id)})" style="display:flex;align-items:center;cursor:pointer;user-select:none">
         <span style="flex:1">history</span>
         <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${historyCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
       </div>
-      <div id="hist-body-${item.id}" style="display:${historyCollapsed.has(item.id)?'none':'block'}">${histRows}</div>
+      <div id="hist-body-${esc(item.id)}" style="display:${historyCollapsed.has(item.id)?'none':'block'}">${histRows}</div>
     </div>` : ''}`;
 }
 

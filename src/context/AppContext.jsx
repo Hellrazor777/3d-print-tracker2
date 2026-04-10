@@ -79,11 +79,15 @@ export function AppProvider({ children }) {
   const inventoryRef = useRef(inventory);
   const catExpandedRef = useRef(catExpanded);
   const filamentsRef = useRef(filaments);
+  const nextIdRef = useRef(nextId);
+  const appSettingsRef = useRef(appSettings);
   useEffect(() => { partsRef.current = parts; }, [parts]);
   useEffect(() => { productsRef.current = products; }, [products]);
   useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
   useEffect(() => { catExpandedRef.current = catExpanded; }, [catExpanded]);
   useEffect(() => { filamentsRef.current = filaments; }, [filaments]);
+  useEffect(() => { nextIdRef.current = nextId; }, [nextId]);
+  useEffect(() => { appSettingsRef.current = appSettings; }, [appSettings]);
 
   // ── Theme ──
   function applyTheme(theme) {
@@ -155,11 +159,9 @@ export function AppProvider({ children }) {
         setBambuConn(status || { connected: false });
       });
       cleanupBambuToken = window.electronAPI.onBambuTokenRefreshed((_, { auth }) => {
-        setAppSettings(prev => {
-          const next = { ...prev, bambuAuth: { ...prev.bambuAuth, ...auth } };
-          saveSettingsStorage(next);
-          return next;
-        });
+        const next = { ...appSettingsRef.current, bambuAuth: { ...appSettingsRef.current.bambuAuth, ...auth } };
+        setAppSettings(next);
+        saveSettingsStorage(next).catch(() => {});
       });
     }
 
@@ -275,18 +277,19 @@ export function AppProvider({ children }) {
   }, []);
 
   const reprint = useCallback(async (id) => {
+    const newId = nextIdRef.current;
+    setNextId(n => n + 1);
     let newParts;
     setParts(prev => {
       const p = prev.find(x => x.id === id);
       if (!p) return prev;
       const reprintedP = { ...p, reprints: (p.reprints || 0) + 1 };
-      const newEntry = { ...p, id: nextId, printed: 0, status: 'queue', reprints: 0 };
-      setNextId(n => n + 1);
+      const newEntry = { ...p, id: newId, printed: 0, status: 'queue', reprints: 0 };
       newParts = prev.map(x => x.id === id ? reprintedP : x).concat(newEntry);
       return newParts;
     });
     await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-  }, [nextId]);
+  }, []);
 
   const deletePart = useCallback(async (id) => {
     let newParts;
@@ -298,6 +301,8 @@ export function AppProvider({ children }) {
     const { name, item, variant, colours, qty, status } = formData;
     const colour = colours[0]?.hex || '#888888';
     const colourName = colours[0]?.name || '';
+    const newId = editId ? null : nextIdRef.current;
+    if (!editId) setNextId(n => n + 1);
     let newParts, newProducts;
     setParts(prev => {
       if (editId) {
@@ -306,8 +311,7 @@ export function AppProvider({ children }) {
           return { ...p, name, item, variant, colours, colour, colourName, qty, status, printed: Math.min(p.printed, qty) };
         });
       } else {
-        const newPart = { id: nextId, name, item, variant, colours, colour, colourName, qty, status, printed: 0, reprints: 0, desc: '' };
-        setNextId(n => n + 1);
+        const newPart = { id: newId, name, item, variant, colours, colour, colourName, qty, status, printed: 0, reprints: 0, desc: '' };
         newParts = [...prev, newPart];
       }
       return newParts;
@@ -326,7 +330,7 @@ export function AppProvider({ children }) {
       await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
     }, 0);
     closeModal();
-  }, [nextId, appSettings.threeMfFolder, closeModal]);
+  }, [appSettings.threeMfFolder, closeModal]);
 
   const setPartStatus = useCallback(async (partId, newStatus) => {
     // Record the product this part belongs to so ProductView can scroll to it after re-render
@@ -415,7 +419,7 @@ export function AppProvider({ children }) {
     setParts(prev => {
       newParts = prev.map(p => {
         if (p.id !== partId) return p;
-        const subParts = [...(p.subParts || []), { name, qty, printed: 0, status: 'queue' }];
+        const subParts = [...(p.subParts || []), { id: Date.now(), name, qty, printed: 0, status: 'queue' }];
         const status = p.status === 'done' ? 'queue' : p.status;
         const printed = p.status === 'done' ? 0 : p.printed;
         return { ...p, subParts, status, printed };
@@ -761,19 +765,15 @@ export function AppProvider({ children }) {
 
   // ── Printer helpers ──
   const saveBambuAuth = useCallback(async (auth) => {
-    setAppSettings(prev => {
-      const next = { ...prev, bambuAuth: auth };
-      saveSettingsStorage(next);
-      return next;
-    });
+    const next = { ...appSettingsRef.current, bambuAuth: auth };
+    setAppSettings(next);
+    await saveSettingsStorage(next);
   }, []);
 
   const saveSnapmakerPrinters = useCallback(async (printers) => {
-    setAppSettings(prev => {
-      const next = { ...prev, printers };
-      saveSettingsStorage(next);
-      return next;
-    });
+    const next = { ...appSettingsRef.current, printers };
+    setAppSettings(next);
+    await saveSettingsStorage(next);
   }, []);
 
   const addCategory = useCallback(async (name) => {
@@ -1040,6 +1040,8 @@ export function AppProvider({ children }) {
     let finalParts, finalProducts;
     setParts(prev => { finalParts = [...prev, ...newParts]; return finalParts; });
     setProducts(prev => { finalProducts = { ...prev, ...newProducts }; return finalProducts; });
+    const maxId = finalParts.length ? Math.max(...finalParts.map(p => p.id || 0)) : 0;
+    setNextId(Math.max(nextIdRef.current, maxId + 1));
     setTimeout(async () => {
       await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
     }, 0);

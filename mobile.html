@@ -1,9 +1,665 @@
-Place your app icon here as icon.ico (256x256 recommended).
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+<title>3D Print Tracker — Inventory</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #e8e8e6;
+    --text: #1a1a1a; --text2: #666660; --text3: #aaa;
+    --border: rgba(0,0,0,0.1); --border2: rgba(0,0,0,0.18);
+    --green: #639922; --green-bg: #eaf3de; --green-dark: #27500a; --green-border: #c0dd97;
+    --blue: #378add; --blue-bg: #e6f1fb; --blue-text: #0c447c;
+    --red: #e24b4a; --red-bg: #fcebeb; --red-text: #791f1f;
+    --amber-bg: #faeeda; --amber-text: #633806;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #f0ede8; --text2: #a8a49e; --text3: #555;
+      --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.14);
+      --green: #7ab83a; --green-bg: #1a2e08; --green-dark: #a8d870; --green-border: #2e5010;
+      --blue: #378add; --blue-bg: #0c2038; --blue-text: #7bbfef;
+      --red: #e24b4a; --red-bg: #2e0c0c; --red-text: #f09595;
+      --amber-bg: #2e1e06; --amber-text: #f5c07a;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 18px; }
 
-You can create a free .ico file at:
-  https://convertico.com  (upload any PNG/JPG and download as .ico)
-  https://favicon.io      (also free, supports transparent backgrounds)
+  .header { background: var(--bg2); border-bottom: 0.5px solid var(--border); padding: 20px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+  .header h1 { font-size: 22px; font-weight: 600; flex: 1; }
+  .header-sub { font-size: 14px; color: var(--text2); }
 
-If you skip this step, Electron will use its default icon.
-Just delete the icon references in package.json if you don't want a custom icon:
-  Remove: "icon": "build-resources/icon.ico"  (appears twice)
+  .search-bar { padding: 16px 20px; background: var(--bg); border-bottom: 0.5px solid var(--border); position: sticky; top: 73px; z-index: 9; }
+  .search-bar input { width: 100%; font-size: 18px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 14px 18px; color: var(--text); font-family: inherit; outline: none; }
+
+  .list { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 100px; }
+  .inv-card { background: var(--bg); border: 0.5px solid var(--border2); border-radius: var(--radius); overflow: hidden; }
+  .inv-card-header { padding: 20px 20px; display: flex; align-items: center; gap: 14px; cursor: pointer; min-height: 80px; }
+  .inv-card-header:active { background: var(--bg2); }
+  .inv-name { font-size: 20px; font-weight: 600; flex: 1; line-height: 1.3; }
+  .inv-onhand { font-size: 36px; font-weight: 700; color: var(--green); min-width: 52px; text-align: right; }
+  .inv-onhand.zero { color: var(--text3); }
+  .inv-label { font-size: 13px; color: var(--text2); text-align: right; }
+  .chevron { font-size: 16px; color: var(--text3); transition: transform .2s; }
+  .chevron.open { transform: rotate(90deg); }
+
+  .inv-detail { border-top: 0.5px solid var(--border); padding: 20px; display: none; }
+  .inv-detail.open { display: block; }
+
+  .count-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+  .count-label { font-size: 16px; color: var(--text2); }
+  .count-ctrl { display: flex; align-items: center; gap: 0; }
+  .count-btn { width: 72px; height: 72px; border: 0.5px solid var(--border2); background: var(--bg2); cursor: pointer; font-size: 36px; font-weight: 300; color: var(--text); display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+  .count-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .count-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  .count-btn:active { background: var(--bg3); }
+  .count-val { width: 80px; height: 72px; border-top: 0.5px solid var(--border2); border-bottom: 0.5px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 36px; font-weight: 700; color: var(--text); background: var(--bg); }
+
+  .dist-section { margin-top: 8px; }
+  .dist-title { font-size: 14px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 14px; }
+  .dest-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
+  .dest-btn { padding: 20px 8px; border: 0.5px solid var(--border2); border-radius: var(--radius); background: var(--bg2); cursor: pointer; text-align: center; font-size: 16px; font-weight: 500; color: var(--text); user-select: none; -webkit-user-select: none; transition: background .1s; }
+  .dest-btn:active { background: var(--bg3); }
+  .dest-btn.active { background: var(--blue-bg); border-color: var(--blue); color: var(--blue-text); }
+  .dest-btn .dest-icon { font-size: 28px; display: block; margin-bottom: 6px; }
+
+  .log-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .log-qty-ctrl { display: flex; align-items: center; gap: 0; }
+  .log-qty-btn { width: 60px; height: 60px; border: 0.5px solid var(--border2); background: var(--bg2); cursor: pointer; font-size: 28px; color: var(--text); display: flex; align-items: center; justify-content: center; user-select: none; -webkit-user-select: none; }
+  .log-qty-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+  .log-qty-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  .log-qty-btn:active { background: var(--bg3); }
+  .log-qty-val { width: 60px; height: 60px; border-top: 0.5px solid var(--border2); border-bottom: 0.5px solid var(--border2); display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 700; color: var(--text); background: var(--bg); }
+  .log-note { flex: 1; font-size: 17px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 14px 14px; color: var(--text); font-family: inherit; outline: none; }
+  .log-submit { width: 100%; padding: 20px; background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius); font-size: 18px; font-weight: 600; color: var(--green-dark); cursor: pointer; margin-top: 6px; }
+  .log-submit:active { opacity: .8; }
+
+  .dist-history { margin-top: 20px; }
+  .dist-hist-title { font-size: 14px; color: var(--text2); margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing:.04em; }
+  .dist-item { display: flex; align-items: center; gap: 10px; padding: 12px 0; border-bottom: 0.5px solid var(--border); font-size: 16px; }
+  .dist-item:last-child { border-bottom: none; }
+  .dist-item-dest { font-size: 13px; padding: 4px 10px; border-radius: 99px; font-weight: 500; white-space: nowrap; }
+  .dest-store { background: var(--blue-bg); color: var(--blue-text); }
+  .dest-markets { background: var(--amber-bg); color: var(--amber-text); }
+  .dest-website { background: var(--green-bg); color: var(--green-dark); }
+  .dist-item-qty { font-weight: 700; margin-left: auto; font-size: 18px; }
+  .dist-item-note { color: var(--text2); font-size: 15px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dist-del { background: transparent; border: none; color: var(--text3); font-size: 22px; cursor: pointer; padding: 8px; }
+  .dist-del:active { color: var(--red); }
+
+  .summary-row { display: flex; gap: 10px; margin-bottom: 24px; }
+  .summary-pill { flex: 1; background: var(--bg2); border-radius: var(--radius); padding: 16px 12px; text-align: center; }
+  .summary-pill .val { font-size: 28px; font-weight: 700; color: var(--text); }
+  .summary-pill .lbl { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
+  .fab { position: fixed; bottom: 28px; right: 24px; width: 68px; height: 68px; border-radius: 50%; background: var(--blue); border: none; color: white; font-size: 34px; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 12px rgba(0,0,0,.25); z-index: 20; }
+  .fab:active { opacity: .85; }
+
+  .sheet-bg { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 30; display: none; align-items: flex-end; }
+  .sheet-bg.open { display: flex; }
+  .sheet { background: var(--bg); border-radius: 20px 20px 0 0; padding: 24px 24px 50px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .sheet h3 { font-size: 20px; font-weight: 600; margin-bottom: 20px; }
+  .sheet-field { margin-bottom: 18px; }
+  .sheet-field label { display: block; font-size: 15px; color: var(--text2); margin-bottom: 8px; }
+  .sheet-field input { width: 100%; font-size: 18px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 14px 16px; color: var(--text); font-family: inherit; outline: none; }
+  .sheet-footer { display: flex; gap: 12px; margin-top: 20px; }
+  .sheet-footer button { flex: 1; padding: 18px; border-radius: var(--radius); font-size: 18px; font-weight: 600; cursor: pointer; border: 0.5px solid var(--border2); background: var(--bg2); color: var(--text); font-family: inherit; }
+  .sheet-footer .primary { background: var(--blue-bg); border-color: var(--blue); color: var(--blue-text); }
+
+  .empty { text-align: center; padding: 80px 24px; color: var(--text2); font-size: 17px; }
+  .loading { text-align: center; padding: 80px 24px; color: var(--text2); font-size: 17px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div style="flex:1">
+    <h1 id="header-title">Inventory</h1>
+    <div class="header-sub" id="last-sync">loading...</div>
+  </div>
+  <button id="stocktake-btn" class="dest-btn" onclick="enterStocktake()" style="padding:8px 14px;font-size:13px;margin:0;margin-right:8px">Stocktake</button>
+  <button class="dest-btn" onclick="reload()" style="padding:8px 14px;font-size:13px;margin:0">Refresh</button>
+</div>
+
+<div class="search-bar" id="search-bar">
+  <input type="search" id="search" placeholder="search products..." oninput="renderList()" autocomplete="off"/>
+</div>
+<div class="search-bar" id="stocktake-search-bar" style="display:none">
+  <input type="search" id="stocktake-search" placeholder="search stocktake..." oninput="renderStocktake()" autocomplete="off"/>
+</div>
+
+<div class="list" id="list"><div class="loading">loading inventory...</div></div>
+
+<button class="fab" onclick="openAddSheet()" title="add product">+</button>
+
+<div class="sheet-bg" id="built-popup" onclick="if(event.target===this)closeBuiltPopup()">
+  <div class="sheet">
+    <h3>update built count</h3>
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:14px;color:var(--text2);margin-bottom:6px">new total</div>
+      <div style="font-size:56px;font-weight:700;line-height:1" id="built-popup-total">0</div>
+    </div>
+    <div style="font-size:14px;color:var(--text2);text-align:center;margin-bottom:14px">adjust by</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:32px">
+      <button class="count-btn" onclick="adjustBuiltDelta(-1)" style="border-radius:var(--radius) 0 0 var(--radius)">−</button>
+      <div class="count-val" id="built-delta-val" style="min-width:100px;font-size:36px;font-weight:700">0</div>
+      <button class="count-btn" onclick="adjustBuiltDelta(1)" style="border-radius:0 var(--radius) var(--radius) 0">+</button>
+    </div>
+    <div class="sheet-footer">
+      <button onclick="closeBuiltPopup()">cancel</button>
+      <button class="primary" onclick="confirmBuiltDelta()">apply</button>
+    </div>
+  </div>
+</div>
+
+<div class="sheet-bg" id="add-sheet" onclick="if(event.target===this)closeAddSheet()">
+  <div class="sheet">
+    <h3>add to inventory</h3>
+    <div class="sheet-field"><label>product name</label><input id="add-name" placeholder="e.g. Pikachu V3"/></div>
+    <div class="sheet-field"><label>category</label><input id="add-cat" placeholder="e.g. character, standard"/></div>
+    <div class="sheet-field"><label>quantity on hand</label><input id="add-qty" type="number" min="0" value="1" inputmode="numeric"/></div>
+    <div class="sheet-field"><label>storage location</label><input id="add-location" placeholder="e.g. shelf A, box 3"/></div>
+    <div class="sheet-footer">
+      <button onclick="closeAddSheet()">cancel</button>
+      <button class="primary" onclick="saveNewItem()">add</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let inventory = [];
+let parts = [];
+let products = {};
+let pendingInventory = []; // synthetic entries for queue/planning products — never saved to server
+let expandedId = null;
+let logQty = 1;
+let selectedDest = 'store';
+let outgoingCollapsed = new Set();
+let historyCollapsed = new Set();
+let appMode = 'inventory'; // 'inventory' | 'stocktake'
+let stocktakeLocation = null;
+let builtPopupItemId = null;
+let builtDelta = 0;
+
+async function reload() {
+  try {
+    const res = await fetch('/data?t=' + Date.now(), { cache: 'no-store' });
+    const data = await res.json();
+    inventory = data.inventory || [];
+    parts     = data.parts     || [];
+    products  = data.products  || {};
+    document.getElementById('last-sync').textContent = 'updated ' + new Date().toLocaleTimeString();
+    if (appMode === 'stocktake') renderStocktake();
+    else renderList();
+  } catch(e) {
+    document.getElementById('last-sync').textContent = 'could not connect to app';
+    document.getElementById('list').innerHTML = '<div class="empty">Make sure the 3D Print Tracker app is open on your PC.</div>';
+  }
+}
+
+function getLocationsFromInventory() {
+  const locs = new Set();
+  inventory.forEach(item => {
+    if (item.storage) Object.keys(item.storage).forEach(l => { if (l) locs.add(l); });
+  });
+  return [...locs];
+}
+
+function enterStocktake() {
+  appMode = 'stocktake';
+  stocktakeLocation = getLocationsFromInventory()[0] || null;
+  document.getElementById('header-title').textContent = 'Stocktake';
+  document.getElementById('stocktake-btn').textContent = '← Back';
+  document.getElementById('stocktake-btn').onclick = exitStocktake;
+  document.getElementById('search-bar').style.display = 'none';
+  document.getElementById('stocktake-search-bar').style.display = '';
+  document.querySelector('.fab').style.display = 'none';
+  renderStocktake();
+}
+
+function exitStocktake() {
+  appMode = 'inventory';
+  document.getElementById('header-title').textContent = 'Inventory';
+  document.getElementById('stocktake-btn').textContent = 'Stocktake';
+  document.getElementById('stocktake-btn').onclick = enterStocktake;
+  document.getElementById('search-bar').style.display = '';
+  document.getElementById('stocktake-search-bar').style.display = 'none';
+  document.querySelector('.fab').style.display = '';
+  renderList();
+}
+
+function renderStocktake() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  const locs = getLocationsFromInventory();
+
+  // Location filter tabs
+  if (locs.length) {
+    if (!stocktakeLocation || !locs.includes(stocktakeLocation)) stocktakeLocation = locs[0];
+    const tabBar = document.createElement('div');
+    tabBar.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px';
+    locs.forEach(loc => {
+      const btn = document.createElement('button');
+      const active = loc === stocktakeLocation;
+      btn.style.cssText = 'padding:12px 20px;border:0.5px solid var(--border2);border-radius:var(--radius);background:' + (active?'var(--blue-bg)':'var(--bg2)') + ';color:' + (active?'var(--blue-text)':'var(--text)') + ';font-size:17px;font-weight:' + (active?'600':'400') + ';cursor:pointer;text-transform:capitalize;font-family:inherit';
+      btn.textContent = loc;
+      btn.onclick = () => { stocktakeLocation = loc; renderStocktake(); };
+      tabBar.appendChild(btn);
+    });
+    list.appendChild(tabBar);
+  }
+
+  const stq = (document.getElementById('stocktake-search')?.value || '').toLowerCase();
+
+  // Rebuild pending inventory entries fresh — never mutate the real inventory array
+  const invNames = new Set(inventory.map(i => i.name));
+  const pendingNames = Object.keys(products)
+    .filter(name => {
+      if (products[name]?.archived) return false;
+      const ps = parts.filter(p => p.item === name);
+      return ps.length > 0 && ps.every(p => p.status === 'planning' || p.status === 'queue');
+    })
+    .filter(name => !invNames.has(name))
+    .sort((a, b) => a.localeCompare(b));
+  // Sync pendingInventory: keep existing entries (preserve any counts the user entered), add new, remove stale
+  pendingInventory = pendingNames.map(name => {
+    const existing = pendingInventory.find(p => p.name === name);
+    return existing || { id: 'pending_' + name.replace(/[^a-zA-Z0-9]/g,'_'), name, built: 0, storage: {}, distributions: [], source: 'tracker' };
+  });
+
+  // Inventory items (already built)
+  const locFiltered = stocktakeLocation
+    ? inventory.filter(i => i.storage && (i.storage[stocktakeLocation]||0) > 0)
+    : inventory;
+  const invItems = stq ? locFiltered.filter(i => i.name.toLowerCase().includes(stq)) : locFiltered;
+
+  // Pending items matching search
+  const pendingItems = stq ? pendingInventory.filter(i => i.name.toLowerCase().includes(stq)) : pendingInventory;
+
+  if (!invItems.length && !pendingItems.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = stocktakeLocation ? 'no items in ' + stocktakeLocation : 'no inventory yet';
+    list.appendChild(empty);
+    return;
+  }
+
+  function makeCard(name, id, qty) {
+    const card = document.createElement('div');
+    card.className = 'inv-card';
+    card.style.padding = '18px 20px';
+    const nameEl = document.createElement('div');
+    nameEl.className = 'inv-name';
+    nameEl.style.marginBottom = '14px';
+    nameEl.textContent = name;
+    const ctrl = document.createElement('div');
+    ctrl.style.cssText = 'display:flex;align-items:center;gap:0';
+    const minusBtn = document.createElement('button');
+    minusBtn.className = 'count-btn';
+    minusBtn.style.borderRadius = 'var(--radius) 0 0 var(--radius)';
+    minusBtn.textContent = '−';
+    minusBtn.onclick = (function(i){ return function(){ adjustStocktake(i, -1); }; })(id);
+    const valEl = document.createElement('div');
+    valEl.className = 'count-val';
+    valEl.id = 'st-' + id;
+    valEl.textContent = qty;
+    const plusBtn = document.createElement('button');
+    plusBtn.className = 'count-btn';
+    plusBtn.style.borderRadius = '0 var(--radius) var(--radius) 0';
+    plusBtn.textContent = '+';
+    plusBtn.onclick = (function(i){ return function(){ adjustStocktake(i, 1); }; })(id);
+    ctrl.appendChild(minusBtn); ctrl.appendChild(valEl); ctrl.appendChild(plusBtn);
+    card.appendChild(nameEl); card.appendChild(ctrl);
+    return card;
+  }
+
+  invItems.forEach(item => {
+    const qty = stocktakeLocation ? (item.storage?.[stocktakeLocation]||0) : calcOnHand(item);
+    list.appendChild(makeCard(item.name, item.id, qty));
+  });
+
+  if (pendingItems.length) {
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 10px';
+    hdr.textContent = 'Queued / Planned';
+    list.appendChild(hdr);
+    pendingItems.forEach(item => {
+      const qty = stocktakeLocation ? (item.storage?.[stocktakeLocation]||0) : calcOnHand(item);
+      list.appendChild(makeCard(item.name, item.id, qty));
+    });
+  }
+}
+
+async function adjustStocktake(id, delta) {
+  const item = inventory.find(i => i.id === id) || pendingInventory.find(i => i.id === id);
+  if (!item || !stocktakeLocation) return;
+  if (!item.storage) item.storage = {};
+  const newVal = Math.max(0, (item.storage[stocktakeLocation]||0) + delta);
+  const diff = newVal - (item.storage[stocktakeLocation]||0);
+  item.storage[stocktakeLocation] = newVal;
+  item.built = Math.max(0, (item.built||0) + diff);
+  const el = document.getElementById('st-' + id);
+  if (el) el.textContent = newVal;
+  await saveItem(item);
+}
+
+function renderList() {
+  const q = document.getElementById('search').value.toLowerCase();
+  const filtered = inventory.filter(i => i.name.toLowerCase().includes(q));
+  const list = document.getElementById('list');
+  if (!filtered.length) { list.innerHTML = '<div class="empty">no products found</div>'; return; }
+  list.innerHTML = '';
+  filtered.forEach(item => {
+    const onHand = calcOnHand(item);
+    const isOpen = expandedId === item.id;
+    const card = document.createElement('div');
+    card.className = 'inv-card';
+    card.innerHTML = `
+      <div class="inv-card-header" onclick="toggleCard('${item.id}')">
+        <div style="flex:1">
+          <div class="inv-name">${item.name}</div>
+          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+item.location+'</div>' : ''}
+        </div>
+        <div style="text-align:right">
+          <div class="inv-onhand ${onHand===0?'zero':''}">${onHand}</div>
+          <div class="inv-label">on hand</div>
+        </div>
+        <div class="chevron ${isOpen?'open':''}">▶</div>
+      </div>
+      <div class="inv-detail ${isOpen?'open':''}">
+        ${renderDetail(item, onHand)}
+      </div>`;
+    list.appendChild(card);
+  });
+}
+
+function calcOnHand(item) {
+  const totalOut = (item.distributions||[]).reduce((a,d) => a + (d.qty||0), 0);
+  return Math.max(0, (item.built||0) - totalOut);
+}
+
+function renderDetail(item, onHand) {
+  const totalOut = (item.distributions||[]).reduce((a,d) => a + (d.qty||0), 0);
+  const byDest = { store:0, markets:0, website:0 };
+  (item.distributions||[]).forEach(d => { if (byDest[d.dest]!==undefined) byDest[d.dest] += d.qty||0; });
+
+  const histRows = (item.distributions||[]).slice().reverse().map((d,i) => `
+    <div class="dist-item">
+      <span class="dist-item-dest dest-${d.dest}">${d.dest}</span>
+      <span class="dist-item-note">${d.note||''}</span>
+      <span class="dist-item-qty">-${d.qty}</span>
+      <button class="dist-del" onclick="removeDist('${item.id}',${(item.distributions.length-1-i)})">&#x2715;</button>
+    </div>`).join('');
+
+  return `
+    <div class="summary-row">
+      <div class="summary-pill"><div class="val">${item.built||0}</div><div class="lbl">built</div></div>
+      <div class="summary-pill"><div class="val">${totalOut}</div><div class="lbl">out</div></div>
+      <div class="summary-pill"><div class="val" style="color:var(--green)">${onHand}</div><div class="lbl">on hand</div></div>
+      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${v||0}</div><div class="lbl">${k.toLowerCase()}</div></div>`).join('')}
+    </div>
+
+    <div class="count-row" onclick="openBuiltPopup('${item.id}')" style="cursor:pointer">
+      <div>
+        <div style="font-size:14px;font-weight:500">built count</div>
+        <div class="count-label">tap to update</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="font-size:36px;font-weight:700">${item.built||0}</div>
+        <div style="font-size:20px;color:var(--text2)">›</div>
+      </div>
+    </div>
+
+    <div style="font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px">location split</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px">total must equal ${calcOnHand(item)} on hand</div>
+    ${Object.keys(item.storage||{}).map(loc => `
+    <div class="count-row" style="margin-bottom:12px">
+      <div>
+        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${loc}</div>
+      </div>
+      <div class="count-ctrl">
+        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',-1)">−</button>
+        <div class="count-val editable-val" id="mob-${loc}-${item.id}" onclick="editNum(this, ${(item.storage||{})[loc]||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); item.storage['${loc}']=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!=='${loc}'); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage['${loc}']); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+'${item.id}'); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${(item.storage||{})[loc]||0}</div>
+        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',1)">+</button>
+      </div>
+    </div>`).join('')}
+    <div style="border-top:0.5px solid var(--border);margin:4px 0 16px"></div>
+
+    <div class="dist-section">
+      <div class="dist-title" onclick="toggleOutgoing('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+        <span style="flex:1">log outgoing</span>
+        <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${outgoingCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
+      </div>
+      <div id="outgoing-body-${item.id}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
+        <div class="dest-btns">
+          <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
+          <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
+          <button class="dest-btn ${selectedDest==='website'?'active':''}" onclick="selectDest('website')"><span class="dest-icon">🌐</span>website</button>
+        </div>
+        <div class="log-row">
+          <div class="log-qty-ctrl">
+            <button class="log-qty-btn" onclick="adjustLogQty(-1)">−</button>
+            <div class="log-qty-val editable-val" onclick="editNum(this, logQty, (v)=>{ logQty=Math.max(1,v); document.querySelectorAll('.log-qty-val').forEach(el=>el.textContent=logQty); document.querySelectorAll('.log-submit').forEach(b=>b.textContent='log '+logQty+' to '+selectedDest); })" title="tap to edit">${logQty}</div>
+            <button class="log-qty-btn" onclick="adjustLogQty(1)">+</button>
+          </div>
+          <input class="log-note" id="log-note-${item.id}" placeholder="note (optional)"/>
+        </div>
+        <button class="log-submit" onclick="logDistribution('${item.id}')">log ${logQty} to ${selectedDest}</button>
+      </div>
+    </div>
+
+    ${histRows ? `
+    <div class="dist-history">
+      <div class="dist-hist-title" onclick="toggleHistory('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+        <span style="flex:1">history</span>
+        <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${historyCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
+      </div>
+      <div id="hist-body-${item.id}" style="display:${historyCollapsed.has(item.id)?'none':'block'}">${histRows}</div>
+    </div>` : ''}`;
+}
+
+function toggleCard(id) {
+  expandedId = expandedId === id ? null : id;
+  renderList();
+}
+
+function toggleHistory(id) {
+  if (historyCollapsed.has(id)) historyCollapsed.delete(id);
+  else historyCollapsed.add(id);
+  const body = document.getElementById('hist-body-' + id);
+  const chevron = body ? body.previousElementSibling.querySelector('span:last-child') : null;
+  if (body) body.style.display = historyCollapsed.has(id) ? 'none' : 'block';
+  if (chevron) chevron.style.transform = historyCollapsed.has(id) ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+function toggleOutgoing(id) {
+  if (outgoingCollapsed.has(id)) {
+    outgoingCollapsed.delete(id);
+  } else {
+    outgoingCollapsed.add(id);
+  }
+  const body = document.getElementById('outgoing-body-' + id);
+  const chevron = body ? body.previousElementSibling.querySelector('span:last-child') : null;
+  if (body) body.style.display = outgoingCollapsed.has(id) ? 'none' : 'block';
+  if (chevron) chevron.style.transform = outgoingCollapsed.has(id) ? 'rotate(0deg)' : 'rotate(90deg)';
+}
+
+function selectDest(dest) {
+  selectedDest = dest;
+  renderList();
+}
+
+function adjustLogQty(delta) {
+  logQty = Math.max(1, logQty + delta);
+  document.querySelectorAll('.log-qty-val').forEach(el => el.textContent = logQty);
+  document.querySelectorAll('.log-submit').forEach(b => {
+    b.textContent = 'log ' + logQty + ' to ' + selectedDest;
+  });
+}
+
+function syncStorage(item) {
+  if (!item.storage) item.storage = {};
+  const onHand = calcOnHand(item);
+  const locs = Object.keys(item.storage);
+  if (!locs.length) return;
+  const total = locs.reduce((a, l) => a + (item.storage[l]||0), 0);
+  if (total !== onHand) {
+    if (locs.length === 1) { item.storage[locs[0]] = onHand; return; }
+    let remaining = onHand;
+    locs.slice(0, -1).forEach(l => {
+      item.storage[l] = Math.min(item.storage[l]||0, remaining);
+      remaining -= item.storage[l];
+    });
+    item.storage[locs[locs.length-1]] = Math.max(0, remaining);
+  }
+}
+
+function editNum(el, currentVal, onSave) {
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.inputMode = 'numeric';
+  input.value = currentVal;
+  input.style.cssText = 'width:70px;font-size:inherit;font-weight:700;text-align:center;background:var(--bg2);border:0.5px solid var(--border2);border-radius:8px;padding:4px;color:var(--text);font-family:inherit;outline:none';
+  el.parentNode.replaceChild(input, el);
+  input.focus(); input.select();
+  const finish = async () => {
+    const v = parseInt(input.value);
+    el.textContent = isNaN(v) ? currentVal : Math.max(0,v);
+    input.parentNode.replaceChild(el, input);
+    if (!isNaN(v)) await onSave(Math.max(0,v));
+  };
+  input.addEventListener('blur', finish);
+  input.addEventListener('keydown', e => { if(e.key==='Enter'||e.key==='Done') finish(); });
+}
+
+function openBuiltPopup(id) {
+  const item = inventory.find(i => i.id === id);
+  if (!item) return;
+  builtPopupItemId = id;
+  builtDelta = 0;
+  document.getElementById('built-popup-total').textContent = item.built || 0;
+  document.getElementById('built-delta-val').textContent = 0;
+  document.getElementById('built-popup').classList.add('open');
+}
+
+function closeBuiltPopup() {
+  document.getElementById('built-popup').classList.remove('open');
+  builtPopupItemId = null;
+  builtDelta = 0;
+}
+
+function adjustBuiltDelta(delta) {
+  const item = inventory.find(i => i.id === builtPopupItemId);
+  if (!item) return;
+  const newTotal = (item.built || 0) + builtDelta + delta;
+  if (newTotal < 0) return;
+  builtDelta += delta;
+  document.getElementById('built-delta-val').textContent = builtDelta > 0 ? '+' + builtDelta : builtDelta;
+  document.getElementById('built-popup-total').textContent = (item.built || 0) + builtDelta;
+}
+
+async function confirmBuiltDelta() {
+  const item = inventory.find(i => i.id === builtPopupItemId);
+  if (!item) return;
+  item.built = Math.max(0, (item.built || 0) + builtDelta);
+  syncStorage(item);
+  await saveItem(item);
+  closeBuiltPopup();
+  renderList();
+}
+
+async function adjustLocation(id, loc, delta) {
+  const item = inventory.find(i => i.id === id); if (!item) return;
+  if (!item.storage) item.storage = {};
+  const onHand = calcOnHand(item);
+  const locs = Object.keys(item.storage);
+  const newVal = Math.max(0, Math.min(onHand, (item.storage[loc]||0) + delta));
+  const diff = newVal - (item.storage[loc]||0);
+  item.storage[loc] = newVal;
+  const otherLocs = locs.filter(l => l !== loc);
+  if (otherLocs.length === 1) {
+    item.storage[otherLocs[0]] = Math.max(0, (item.storage[otherLocs[0]]||0) - diff);
+    const otherEl = document.getElementById('mob-'+otherLocs[0]+'-'+id);
+    if (otherEl) otherEl.textContent = item.storage[otherLocs[0]];
+  }
+  const locEl = document.getElementById('mob-'+loc+'-'+id);
+  if (locEl) locEl.textContent = newVal;
+  await saveItem(item);
+}
+
+async function logDistribution(id) {
+  const item = inventory.find(i => i.id === id);
+  if (!item) return;
+  const note = (document.getElementById('log-note-' + id)||{}).value || '';
+  if (!item.distributions) item.distributions = [];
+  item.distributions.push({ dest: selectedDest, qty: logQty, note, date: new Date().toISOString() });
+  // Reduce storage locations to stay in sync with new on-hand
+  if (item.storage) {
+    let remaining = logQty;
+    for (const loc of Object.keys(item.storage)) {
+      if (remaining <= 0) break;
+      const take = Math.min(item.storage[loc] || 0, remaining);
+      item.storage[loc] = (item.storage[loc] || 0) - take;
+      remaining -= take;
+    }
+  }
+  await saveItem(item);
+  renderList();
+}
+
+async function removeDist(id, index) {
+  const item = inventory.find(i => i.id === id);
+  if (!item || !item.distributions) return;
+  const removed = item.distributions[index];
+  item.distributions.splice(index, 1);
+  // Restore the removed qty back into storage (add to last location)
+  if (removed?.qty && item.storage) {
+    const locs = Object.keys(item.storage);
+    if (locs.length) item.storage[locs[locs.length - 1]] = (item.storage[locs[locs.length - 1]] || 0) + removed.qty;
+  }
+  await saveItem(item);
+  renderList();
+}
+
+async function saveItem(item) {
+  try {
+    await fetch('/inventory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+  } catch(e) { console.error('save failed', e); }
+}
+
+function openAddSheet() { document.getElementById('add-sheet').classList.add('open'); document.getElementById('add-name').focus(); }
+function closeAddSheet() { document.getElementById('add-sheet').classList.remove('open'); }
+
+async function saveNewItem() {
+  const name = document.getElementById('add-name').value.trim();
+  if (!name) return;
+  const builtQty = parseInt(document.getElementById('add-qty').value) || 0;
+  const item = {
+    id: 'inv_' + Date.now(),
+    name,
+    category: document.getElementById('add-cat').value.trim(),
+    built: builtQty,
+    location: document.getElementById('add-location').value.trim(),
+    storage: { Box: 0, Shelf: builtQty },
+    distributions: [],
+    source: 'manual'
+  };
+  inventory.push(item);
+  await saveItem(item);
+  closeAddSheet();
+  renderList();
+}
+
+reload();
+setInterval(reload, 30000);
+</script>
+</body>
+</html>

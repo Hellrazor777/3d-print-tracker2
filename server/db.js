@@ -84,7 +84,10 @@ async function saveData(data) {
   await dbReadyPromise;
   if (usePostgres) {
     await pgPool.query(
-      "UPDATE app_data SET data = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+      `INSERT INTO app_data (id, data, updated_at)
+       VALUES ('default', $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE
+         SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
       [JSON.stringify(data)]
     );
   } else {
@@ -96,7 +99,10 @@ async function saveSettings(settings) {
   await dbReadyPromise;
   if (usePostgres) {
     await pgPool.query(
-      "UPDATE app_data SET settings = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+      `INSERT INTO app_data (id, settings, updated_at)
+       VALUES ('default', $1::jsonb, NOW())
+       ON CONFLICT (id) DO UPDATE
+         SET settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at`,
       [JSON.stringify(settings)]
     );
   } else {

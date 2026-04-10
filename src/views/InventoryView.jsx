@@ -49,11 +49,29 @@ function PhoneInventoryUrl({ raw }) {
 
 export default function InventoryView() {
   const { inventory, invExpanded, toggleInvCard, openModal, fetchLocalIP, localIP } = useApp();
+  const [search,  setSearch]  = useState('');
+  const [invSort, setInvSort] = useState('az');
+
+  const needle = search.trim().toLowerCase();
+  const filtered = inventory.filter(item =>
+    !needle ||
+    (item.name || '').toLowerCase().includes(needle) ||
+    (item.category || '').toLowerCase().includes(needle) ||
+    (item.location || '').toLowerCase().includes(needle)
+  );
+
+  const natCmp = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true, sensitivity: 'base' });
+  const sorted = [...filtered].sort((a, b) => {
+    if (invSort === 'za')       return (b.name || '').localeCompare(a.name || '');
+    if (invSort === 'num-asc')  return natCmp(a, b);
+    if (invSort === 'num-desc') return natCmp(b, a);
+    return (a.name || '').localeCompare(b.name || ''); // az default
+  });
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
-        <div style={{ fontSize: 13, color: 'var(--text2)' }}>{inventory.length} product{inventory.length !== 1 ? 's' : ''} in inventory</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        <div style={{ fontSize: 13, color: 'var(--text2)' }}>{filtered.length}{filtered.length !== inventory.length ? ` of ${inventory.length}` : ''} product{inventory.length !== 1 ? 's' : ''} in inventory</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {localIP
             ? <PhoneInventoryUrl raw={localIP} />
@@ -63,12 +81,34 @@ export default function InventoryView() {
         </div>
       </div>
 
+      {/* Search + sort bar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search inventory…"
+          style={{ flex: 1, fontSize: 13, background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', padding: '6px 10px', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' }}
+        />
+        <select
+          value={invSort} onChange={e => setInvSort(e.target.value)}
+          style={{ fontSize: 12, padding: '6px 8px', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none', cursor: 'pointer' }}
+        >
+          <option value="az">A → Z</option>
+          <option value="za">Z → A</option>
+          <option value="num-asc">Number ↑</option>
+          <option value="num-desc">Number ↓</option>
+        </select>
+      </div>
+
       {!inventory.length && (
         <p style={{ color: 'var(--text2)', fontSize: 13, padding: '1rem 0' }}>no inventory yet — mark a product ready to build and hit "+ inventory", or add one manually.</p>
       )}
+      {inventory.length > 0 && sorted.length === 0 && (
+        <p style={{ color: 'var(--text2)', fontSize: 13, padding: '1rem 0' }}>no results for "{search}"</p>
+      )}
 
       <div className="product-list">
-        {inventory.map(item => (
+        {sorted.map(item => (
           <InvCard key={item.id} item={item} isOpen={invExpanded.has(item.id)} toggleInvCard={toggleInvCard} />
         ))}
       </div>

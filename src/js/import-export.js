@@ -130,5 +130,8 @@ async function applyImport() {
     parts.push({id:nextId++,name:r.part_name,item:productName,variant:r.variant,desc:r.description,colour:r.colour_hex,colourName:r.colour_name,stl:r.stl,qty:r.qty,printed:0,status:'queue',reprints:0});
     openProducts.add(productName);
   });
+  // Re-derive nextId from the actual parts array so both the vanilla JS layer and
+  // any React state that reloads from disk will compute the same safe value.
+  nextId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
   await persist(); render();
 }

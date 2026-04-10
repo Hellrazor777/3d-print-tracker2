@@ -27,7 +27,7 @@ function n3dColour(name) {
 }
 
 export default function N3DModal() {
-  const { closeModal, isElectron, products, getCategoryOrder, importData, appSettings, saveAppSettings, setProductImagePath } = useApp();
+  const { closeModal, isElectron, products, getCategoryOrder, importData, appSettings, saveAppSettings, setProductImagePath, addProduct3mfFiles } = useApp();
 
   const [apiKey, setApiKey] = useState(() => appSettings.n3dApiKey || '');
   const [connected, setConnected] = useState(false);
@@ -182,6 +182,8 @@ export default function N3DModal() {
             window.electronAPI.downloadN3dFiles(d.slug, profileCount, folder, tok0, tok1).then(r => {
               if (r?.error === 'AUTH_INVALID') {
                 showStatus('3MF auth tokens invalid — update them in Settings → 3MF Files', 'err');
+              } else if (r?.ok && r.files?.length) {
+                addProduct3mfFiles(productName, r.files);
               }
             });
           }

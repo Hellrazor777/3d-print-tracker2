@@ -990,6 +990,19 @@ export function AppProvider({ children }) {
     return 0;
   }, [appSettings.threeMfFolder]);
 
+  // Merge downloaded 3MF filenames into a product's threeMfFiles list (used after N3D download)
+  const addProduct3mfFiles = useCallback(async (item, fileNames) => {
+    if (!fileNames?.length) return;
+    setProducts(prev => {
+      const prevFiles = prev[item]?.threeMfFiles || [];
+      const nextFiles = [...new Set([...prevFiles, ...fileNames])];
+      return { ...prev, [item]: { ...(prev[item] || {}), threeMfFiles: nextFiles } };
+    });
+    setTimeout(async () => {
+      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    }, 0);
+  }, []);
+
   // Set product image path (used after N3D image download, or any programmatic image update)
   const setProductImagePath = useCallback(async (item, imagePath) => {
     setProducts(prev => ({ ...prev, [item]: { ...prev[item], imagePath } }));
@@ -1100,7 +1113,7 @@ export function AppProvider({ children }) {
     addStorageLocation, removeStorageLocation, renameStorageLocation, moveStorageLocation,
     addOutgoingDest, removeOutgoingDest, renameOutgoingDest, moveOutgoingDest,
     // Electron file ops
-    uploadProductImage, openProductFolder, openProductInSlicer, uploadProduct3mf, openExternalUrl, setProductImagePath,
+    uploadProductImage, openProductFolder, openProductInSlicer, uploadProduct3mf, addProduct3mfFiles, openExternalUrl, setProductImagePath,
     // Import / Export
     importData, exportData, updatePartQty,
     // Filament library

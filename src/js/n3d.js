@@ -227,6 +227,9 @@ async function n3dImportSelected() {
     }
   });
 
+  // Re-derive nextId from the actual parts array so both the vanilla JS layer and
+  // any React state that reloads from disk will compute the same safe value.
+  nextId = parts.length ? Math.max(...parts.map(p => p.id)) + 1 : 1;
   await persist();
   n3dSelected.clear();
   n3dUpdateBar();

@@ -6,8 +6,16 @@ async function loadData() {
   try { return JSON.parse(localStorage.getItem('3dp_data')); } catch(e) { return null; }
 }
 async function saveData(data) {
-  if (isElectron) return await window.electronAPI.saveData(data);
-  localStorage.setItem('3dp_data', JSON.stringify(data));
+  if (isElectron) {
+    // Merge with the full saved payload so fields not managed by the vanilla JS
+    // layer (e.g. filaments) are never silently dropped from disk.
+    const existing = await window.electronAPI.loadData().catch(() => null) || {};
+    return await window.electronAPI.saveData({ ...existing, ...data });
+  }
+  try {
+    const existing = JSON.parse(localStorage.getItem('3dp_data') || '{}');
+    localStorage.setItem('3dp_data', JSON.stringify({ ...existing, ...data }));
+  } catch { localStorage.setItem('3dp_data', JSON.stringify(data)); }
 }
 async function loadSettings() {
   if (isElectron) return await window.electronAPI.loadSettings();

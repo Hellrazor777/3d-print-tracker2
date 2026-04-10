@@ -134,13 +134,12 @@ function isExpired(token) {
 
 // ─── HTTP helpers ─────────────────────────────────────────────────────────────
 
-function httpsReq(method, url, body, headers = {}, timeoutMs = 15000) {
+function httpsReq(method, url, body, headers = {}) {
   return new Promise((resolve, reject) => {
     const u = new URL(url); const data = body ? JSON.stringify(body) : null;
     const req = https.request({
       hostname: u.hostname, port: 443, path: u.pathname + u.search, method,
       headers: { ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}), ...headers },
-      timeout: timeoutMs,
     }, res => {
       let s = ''; res.on('data', c => s += c);
       res.on('end', () => {
@@ -154,7 +153,6 @@ function httpsReq(method, url, body, headers = {}, timeoutMs = 15000) {
         catch { resolve({ status: res.statusCode, data: s, cookieToken }); }
       });
     });
-    req.on('timeout', () => { req.destroy(new Error(`Request to ${u.hostname} timed out after ${timeoutMs / 1000}s`)); });
     req.on('error', reject);
     if (data) req.write(data);
     req.end();
@@ -164,10 +162,13 @@ function httpsReq(method, url, body, headers = {}, timeoutMs = 15000) {
 function httpReq(method, url, body, token) {
   return new Promise((resolve, reject) => {
     const u = new URL(url); const data = body ? JSON.stringify(body) : null;
-    const path = u.pathname + (token && method === 'GET' ? `?token=${encodeURIComponent(token)}` : '');
+    const path = u.pathname + (u.search || '');
     const req = http.request({
-      hostname: u.hostname, port: parseInt(u.port) || 8080, path, method, timeout: 6000,
-      headers: { ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}) },
+      hostname: u.hostname, port: parseInt(u.port) || 7125, path, method, timeout: 6000,
+      headers: {
+        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : {}),
+        ...(token ? { 'X-Api-Key': token } : {}),
+      },
     }, res => {
       let s = ''; res.on('data', c => s += c);
       res.on('end', () => { try { resolve({ status: res.statusCode, data: JSON.parse(s) }); } catch { resolve({ status: res.statusCode, data: s }); } });
@@ -197,26 +198,13 @@ const BAMBU_HEADERS = {
   'Accept':               'application/json',
 };
 
-// Region-aware base URLs.
-// 'china'  → api.bambulab.cn / cn.mqtt.bambulab.com
-// anything else → api.bambulab.com / us.mqtt.bambulab.com
-function bambuBaseUrls(region) {
-  const china = region === 'china';
-  return {
-    api:  china ? 'https://api.bambulab.cn'  : 'https://api.bambulab.com',
-    web:  china ? 'https://bambulab.cn'       : 'https://bambulab.com',
-    mqtt: china ? 'cn.mqtt.bambulab.com'      : 'us.mqtt.bambulab.com',
-  };
-}
-
-async function bambuLogin(account, password, region = 'global') {
+async function bambuLogin(account, password) {
   // Endpoint: api.bambulab.com (not bambulab.com) — matches the Python SDK.
   // Payload must include apiError: '' or the server may reject the request.
   // Returns: { success, accessToken } on direct login,
   //          { loginType: 'verifyCode' } when email code is needed,
   //          { loginType: 'tfa', tfaKey } when authenticator app is needed.
-  const { api } = bambuBaseUrls(region);
-  const r = await httpsReq('POST', `${api}/v1/user-service/user/login`,
+  const r = await httpsReq('POST', 'https://api.bambulab.com/v1/user-service/user/login',
     { account, password, apiError: '' }, BAMBU_HEADERS);
   const d = r.data;
 
@@ -224,7 +212,7 @@ async function bambuLogin(account, password, region = 'global') {
     // Explicitly send the verification email.
     // Payload requires { email, type: 'codeLogin' } — the type field is mandatory.
     try {
-      await httpsReq('POST', `${api}/v1/user-service/user/sendemail/code`,
+      await httpsReq('POST', 'https://api.bambulab.com/v1/user-service/user/sendemail/code',
         { email: account, type: 'codeLogin' }, BAMBU_HEADERS);
     } catch {}
   }
@@ -234,9 +222,8 @@ async function bambuLogin(account, password, region = 'global') {
 // verifyCode flow: re-POST to the same login endpoint with just { account, code }.
 // No password needed at this stage — matches the Python SDK exactly.
 // Returns { accessToken } in the response body.
-async function bambuVerifyCode(account, code, region = 'global') {
-  const { api } = bambuBaseUrls(region);
-  const r = await httpsReq('POST', `${api}/v1/user-service/user/login`,
+async function bambuVerifyCode(account, code) {
+  const r = await httpsReq('POST', 'https://api.bambulab.com/v1/user-service/user/login',
     { account, code }, BAMBU_HEADERS);
   return r.data;
 }
@@ -244,49 +231,50 @@ async function bambuVerifyCode(account, code, region = 'global') {
 // TFA flow (authenticator app):
 // POST to the TFA endpoint with { tfaKey, tfaCode }.
 // The JWT token is returned in the Set-Cookie header as 'token', not in the body.
-async function bambuVerify(account, tfaKey, code, region = 'global') {
-  const { web } = bambuBaseUrls(region);
-  const r = await httpsReq('POST', `${web}/api/sign-in/tfa`, { tfaKey, tfaCode: code }, BAMBU_HEADERS);
+async function bambuVerify(account, tfaKey, code) {
+  const r = await httpsReq('POST', 'https://bambulab.com/api/sign-in/tfa', { tfaKey, tfaCode: code }, BAMBU_HEADERS);
   // HA extracts from cookies; also check body as fallback
   const token = r.cookieToken || r.data?.token || r.data?.accessToken || null;
   return { token, refreshToken: r.data?.refreshToken || null, ...r.data };
 }
 
-async function bambuGetDevices(accessToken, region = 'global') {
-  const { api } = bambuBaseUrls(region);
-  const r = await httpsReq('GET', `${api}/v1/iot-service/api/user/bind`, null, { Authorization: `Bearer ${accessToken}` });
+async function bambuGetDevices(accessToken) {
+  const r = await httpsReq('GET', 'https://api.bambulab.com/v1/iot-service/api/user/bind', null, { Authorization: `Bearer ${accessToken}` });
   return r.data?.devices || r.data?.message || [];
 }
 
-async function bambuGetUid(accessToken, region = 'global') {
+async function bambuGetUid(accessToken) {
   // UID is no longer embedded in the JWT — must be fetched from the preferences API.
   // API response: { code, message, data: { uid: <number>, ... } }
-  const { api } = bambuBaseUrls(region);
-  const r = await httpsReq('GET', `${api}/v1/design-user-service/my/preference`, null, { Authorization: `Bearer ${accessToken}` });
+  const r = await httpsReq('GET', 'https://api.bambulab.com/v1/design-user-service/my/preference', null, { Authorization: `Bearer ${accessToken}` });
   const uid = r.data?.data?.uid ?? r.data?.uid;
   return uid ? String(uid) : null;
 }
 
-async function bambuRefresh(refreshToken, region = 'global') {
-  const { web } = bambuBaseUrls(region);
-  const r = await httpsReq('POST', `${web}/api/sign-in/refresh`, { refreshToken });
+async function bambuRefresh(refreshToken) {
+  const r = await httpsReq('POST', 'https://bambulab.com/api/sign-in/refresh', { refreshToken });
   return r.data;
 }
 
 async function bambuGetTasks(accessToken, page = 1, limit = 20, region = 'global') {
-  const { api } = bambuBaseUrls(region);
-  const r = await httpsReq('GET', `${api}/v1/iot-service/api/user/task?page=${page}&limit=${limit}`,
-    null, { Authorization: `Bearer ${accessToken}` });
-  if (r.status < 200 || r.status >= 300) {
-    const errMsg = r.data?.message || r.data?.detail || r.data?.error || `Bambu API error ${r.status}`;
-    const err = new Error(errMsg);
-    err.httpStatus = r.status;
-    throw err;
+  const base = region === 'china' ? 'https://api.bambulab.cn' : 'https://api.bambulab.com';
+  // Try primary endpoint first, then fall back to alternate path
+  const endpoints = [
+    `${base}/v1/iot-service/api/user/task?page=${page}&limit=${limit}`,
+    `${base}/v1/user-service/my/tasks?page=${page}&limit=${limit}`,
+  ];
+  let lastStatus = 0;
+  for (const url of endpoints) {
+    const r = await httpsReq('GET', url, null, { Authorization: `Bearer ${accessToken}` });
+    lastStatus = r.status;
+    if (r.status === 401 || r.status === 403) throw new Error('Auth failed — please disconnect and reconnect your Bambu account');
+    if (r.status === 404) continue; // try next endpoint
+    if (r.status !== 200) throw new Error(`Bambu API returned ${r.status}`);
+    if (r.data?.code !== undefined && r.data.code !== 0) throw new Error(r.data.message || `API code ${r.data.code}`);
+    return r.data;
   }
-  if (r.data?.detail || (r.data?.message && r.data.message !== 'success' && !r.data?.hits)) {
-    throw new Error(r.data.detail || r.data.message || 'Bambu returned an unexpected response');
-  }
-  return r.data;
+  if (lastStatus === 404) throw new Error('Print history is not available for this Bambu account');
+  throw new Error(`Bambu API returned ${lastStatus}`);
 }
 
 // Parse a Bambu MQTT message into a partial state patch.
@@ -361,9 +349,8 @@ function connectBambu(auth) {
   const client = new MqttTls();
   mqttClient = client;
 
-  const { mqtt: mqttHost } = bambuBaseUrls(auth.region || 'global');
   client.connect({
-    host: mqttHost, port: 8883,
+    host: 'us.mqtt.bambulab.com', port: 8883,
     clientId: `3dprinttracker_${Math.random().toString(36).slice(2, 10)}`,
     username: `u_${uid}`, password: auth.accessToken,
     keepalive: 60,
@@ -421,7 +408,7 @@ function connectBambu(auth) {
         // Mark that we've tried so we don't loop
         currentAuth = { ...currentAuth, _refreshAttempted: true };
         send('bambu-conn', { connected: false, connecting: true, error: 'Auth failed — refreshing token…' });
-        bambuRefresh(currentAuth.refreshToken, currentAuth.region || 'global').then(r => {
+        bambuRefresh(currentAuth.refreshToken).then(r => {
           const newTok = r.accessToken || r.token;
           if (newTok) {
             currentAuth = { ...currentAuth, accessToken: newTok, refreshToken: r.refreshToken || currentAuth.refreshToken, _refreshAttempted: true };
@@ -462,7 +449,7 @@ function connectBambu(auth) {
 // This ensures a stale or wrong uid from a previous broken session never causes CONNACK 5.
 async function prepareAuth(auth) {
   try {
-    const uid = await bambuGetUid(auth.accessToken, auth.region || 'global');
+    const uid = await bambuGetUid(auth.accessToken);
     if (uid) {
       const updated = { ...auth, uid };
       if (uid !== String(auth.uid || '')) {
@@ -480,7 +467,7 @@ async function tryReconnect() {
   // Refresh expired token first
   if (isExpired(currentAuth.accessToken) && currentAuth.refreshToken) {
     try {
-      const r = await bambuRefresh(currentAuth.refreshToken, currentAuth.region || 'global');
+      const r = await bambuRefresh(currentAuth.refreshToken);
       // Bambu refresh endpoint returns 'token' (legacy) or 'accessToken' — accept both.
       const newAccessToken = r.accessToken || r.token;
       if (newAccessToken) {
@@ -576,44 +563,91 @@ function disconnectBambuLan() {
   send('bambu-lan-conn', { connected: false });
 }
 
-// ─── Snapmaker HTTP ───────────────────────────────────────────────────────────
+// ─── Moonraker HTTP (Snapmaker via Moonraker API) ─────────────────────────────
+// Endpoint: GET http://<ip>:7125/printer/objects/query?...
+// Auth:     X-Api-Key header (optional — the device config uses trusted_clients
+//           covering all LAN ranges, so no key is needed for local connections)
+// mDNS:    printer is also reachable as lava.local (zeroconf mdns_hostname)
+
+const MOONRAKER_STATE_MAP = { printing: 'RUNNING', standby: 'IDLE', paused: 'PAUSE', error: 'FAILED', complete: 'FINISH' };
+
+// Objects to query on each poll — covers the U1's 4-head tool-changer layout
+const MOONRAKER_QUERY = [
+  'print_stats',
+  'virtual_sdcard',
+  'toolhead',
+  'extruder', 'extruder1', 'extruder2', 'extruder3',
+  'heater_bed',
+  'temperature_sensor%20cavity',       // enclosure temperature
+  'filament_motion_sensor%20e0_filament',
+  'filament_motion_sensor%20e1_filament',
+  'filament_motion_sensor%20e2_filament',
+  'filament_motion_sensor%20e3_filament',
+].join('&');
 
 function parseSnapState(id, name, d) {
-  const t = d.temperature || {};
-  const n = t.nozzle || t.extruder || t.t || {};
-  const b = t.bed || t.b || {};
+  // Moonraker wraps its response: { result: { status: { ... } } }
+  const s   = (d.result && d.result.status) ? d.result.status : {};
+  const ps  = s.print_stats    || {};
+  const bed = s.heater_bed     || {};
+  const vsd = s.virtual_sdcard || {};
+  const th  = s.toolhead       || {};
 
-  // Normalise Snapmaker status strings → values the UI understands
-  const rawStatus = (d.status || d.machineStatus || 'UNKNOWN').toUpperCase();
-  const statusMap = {
-    PRINTING: 'RUNNING', WORKING: 'RUNNING', RUNNING: 'RUNNING',
-    PAUSED: 'PAUSE', PAUSING: 'PAUSE', PAUSE: 'PAUSE',
-    IDLE: 'IDLE', STANDBY: 'IDLE', READY: 'IDLE',
-    FINISHING: 'FINISH', FINISH: 'FINISH', COMPLETED: 'FINISH',
-    FAILED: 'FAILED', ERROR: 'FAILED',
-    OFFLINE: 'OFFLINE', UNKNOWN: 'UNKNOWN',
-  };
-  const status = statusMap[rawStatus] || rawStatus;
+  const rawState   = ps.state || 'standby';
+  const progress   = vsd.progress || 0;   // 0.0–1.0
+  const printedSec = ps.print_duration || 0;
+  const remainSec  = progress > 0 ? Math.max(0, (printedSec / progress) - printedSec) : 0;
+
+  // All 4 extruder heads (U1 is a tool-changer with up to 4 active heads)
+  const extruderNames = ['extruder', 'extruder1', 'extruder2', 'extruder3'];
+  const extruders = extruderNames.map((n, i) => {
+    const e = s[n];
+    if (!e) return null;
+    const filamentKey = `filament_motion_sensor e${i}_filament`;
+    const filSensor   = s[filamentKey] || {};
+    return {
+      temp:             parseFloat(e.temperature || 0),
+      target:           parseFloat(e.target      || 0),
+      filament_loaded:  filSensor.filament_detected ?? null,
+    };
+  });
+
+  // Determine the active extruder for backward-compat nozzle_temp field
+  const activeExtName = th.active_extruder || 'extruder';
+  const activeIdx     = extruderNames.indexOf(activeExtName);
+  const activeExt     = extruders[activeIdx >= 0 ? activeIdx : 0] || extruders[0] || {};
+
+  // Enclosure/cavity temperature
+  const cavityObj  = s['temperature_sensor cavity'] || s['temperature_sensor%20cavity'] || {};
+  const cavity_temp = cavityObj.temperature != null ? parseFloat(cavityObj.temperature) : null;
 
   return {
-    id, name, status,
-    progress: Math.round(d.progress ?? d.printProgress ?? 0),
-    remaining_min: Math.round((d.remainingTime ?? 0) / 60),
-    file: d.fileName || d.gcodeName || d.subtaskName || '',
-    nozzle_temp: parseFloat(n.current ?? n.now ?? n.value ?? 0),
-    nozzle_target: parseFloat(n.target ?? 0),
-    bed_temp: parseFloat(b.current ?? b.now ?? b.value ?? 0),
-    bed_target: parseFloat(b.target ?? 0),
+    id, name,
+    status:        MOONRAKER_STATE_MAP[rawState] || 'UNKNOWN',
+    progress:      Math.round(progress * 100),
+    remaining_min: Math.round(remainSec / 60),
+    file:          ps.filename || '',
+    // Primary nozzle (backward-compat with Bambu card rendering)
+    nozzle_temp:   activeExt.temp   || 0,
+    nozzle_target: activeExt.target || 0,
+    bed_temp:      parseFloat(bed.temperature || 0),
+    bed_target:    parseFloat(bed.target      || 0),
+    // Extended U1 fields
+    extruders,
+    cavity_temp,
     ts: Date.now(),
   };
 }
 
+const snapConfigs = {}; // id → { ip, token } for use by print-cmd handler
+
 function startSnapPoll(printer) {
   const { id, name, ip, token } = printer;
+  snapConfigs[id] = { ip, token };
   stopSnapPoll(id);
   const poll = async () => {
     try {
-      const r = await httpReq('GET', `http://${ip}:8080/api/v1/status`, null, token);
+      const r = await httpReq('GET', `http://${ip}:7125/printer/objects/query?${MOONRAKER_QUERY}`, null, token);
       if (r.status === 200 && r.data && typeof r.data === 'object') {
         const state = parseSnapState(id, name, r.data);
         printerStates[id] = state;
@@ -729,13 +763,27 @@ function stopAllCameras() {
 }
 
 // ─── Cloud camera relay (WebSocket to cloud server) ──────────────────────────
+//
+// When enabled, the desktop opens a WebSocket connection to the cloud server
+// and pushes raw JPEG frames for every active camera stream.  The cloud server
+// then serves those frames as MJPEG to browser clients — no LAN access needed
+// on the server side.
+//
+// Binary message format (desktop → cloud):
+//   [0..3]  serial length  (uint32 LE)
+//   [4..N]  serial string  (UTF-8)
+//   [N..]   JPEG bytes
 
 const crypto = require('crypto');
 
-let relaySocket         = null;
-let relayActive         = false;
+let relaySocket         = null;  // raw TCP/TLS socket after WebSocket upgrade
+let relayActive         = false; // true while the user has relay enabled
 let relayReconnectTimer = null;
 
+/**
+ * Minimal WebSocket client using only Node built-ins.
+ * Sends binary frames; no receive handling needed.
+ */
 function wsClientConnect(url, token, onOpen, onClose) {
   const u = new URL(url);
   const isSecure = u.protocol === 'wss:';
@@ -773,6 +821,9 @@ function wsClientConnect(url, token, onOpen, onClose) {
   req.end();
 }
 
+/**
+ * Send a masked binary WebSocket frame (RFC 6455 — clients must mask).
+ */
 function wsSendFrame(socket, data) {
   if (!socket || socket.destroyed) return;
   const len  = data.length;
@@ -782,7 +833,7 @@ function wsSendFrame(socket, data) {
   else if (len >= 126) hLen += 2;
 
   const header = Buffer.alloc(hLen);
-  header[0] = 0x82;
+  header[0] = 0x82; // FIN + binary opcode
   if (len > 65535) {
     header[1] = 0xFF;
     header.writeBigUInt64BE(BigInt(len), 2);
@@ -799,6 +850,7 @@ function wsSendFrame(socket, data) {
   try { socket.write(Buffer.concat([header, mask, masked])); } catch {}
 }
 
+/** Package serial + JPEG and push to the relay WebSocket. */
 function sendFrameToRelay(serial, jpegBuffer) {
   if (!relaySocket || relaySocket.destroyed) return;
   const serialBuf = Buffer.from(serial, 'utf8');
@@ -812,6 +864,7 @@ function startRelay(cloudApiUrl, token) {
   if (!cloudApiUrl || !token) return;
   relayActive = true;
 
+  // Convert http(s):// → ws(s):// and add relay path
   const wsUrl = cloudApiUrl.replace(/^http/, 'ws').replace(/\/$/, '') + '/api/camera-relay';
 
   function attemptConnect() {
@@ -823,8 +876,13 @@ function startRelay(cloudApiUrl, token) {
       },
       (err) => {
         relaySocket = null;
-        send('camera-relay-status', { connected: false, error: err ? err.message : 'Disconnected' });
-        if (relayActive) relayReconnectTimer = setTimeout(attemptConnect, 8000);
+        send('camera-relay-status', {
+          connected: false,
+          error: err ? err.message : 'Disconnected',
+        });
+        if (relayActive) {
+          relayReconnectTimer = setTimeout(attemptConnect, 8000);
+        }
       }
     );
   }
@@ -837,14 +895,20 @@ function stopRelay() {
   clearTimeout(relayReconnectTimer);
   relayReconnectTimer = null;
   if (relaySocket) {
-    try { relaySocket.write(Buffer.from([0x88, 0x80, 0, 0, 0, 0])); relaySocket.destroy(); } catch {}
+    try {
+      relaySocket.write(Buffer.from([0x88, 0x80, 0, 0, 0, 0])); // WS close frame
+      relaySocket.destroy();
+    } catch {}
     relaySocket = null;
   }
   send('camera-relay-status', { connected: false });
 }
 
 function getRelayStatus() {
-  return { active: relayActive, connected: relaySocket !== null && !relaySocket.destroyed };
+  return {
+    active:    relayActive,
+    connected: relaySocket !== null && !relaySocket.destroyed,
+  };
 }
 
 // ─── Auto-start helper ────────────────────────────────────────────────────────
@@ -878,24 +942,24 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
   mainWin = win;
   autoStart(loadSettings);
 
-  ipcMain.handle('printer-bambu-login', async (_, { account, password, region }) => {
-    try { return await bambuLogin(account, password, region || 'global'); }
+  ipcMain.handle('printer-bambu-login', async (_, { account, password }) => {
+    try { return await bambuLogin(account, password); }
     catch (e) { return { error: e.message }; }
   });
 
-  ipcMain.handle('printer-bambu-verify', async (_, { account, tfaKey, code, region }) => {
-    try { return await bambuVerify(account, tfaKey, code, region || 'global'); }
+  ipcMain.handle('printer-bambu-verify', async (_, { account, tfaKey, code }) => {
+    try { return await bambuVerify(account, tfaKey, code); }
     catch (e) { return { error: e.message }; }
   });
 
   // verifyCode (Microsoft/Google/Apple OAuth accounts): re-posts to login endpoint with code only
-  ipcMain.handle('printer-bambu-verify-code', async (_, { account, code, region }) => {
-    try { return await bambuVerifyCode(account, code, region || 'global'); }
+  ipcMain.handle('printer-bambu-verify-code', async (_, { account, code }) => {
+    try { return await bambuVerifyCode(account, code); }
     catch (e) { return { error: e.message }; }
   });
 
-  ipcMain.handle('printer-bambu-get-devices', async (_, { accessToken, region }) => {
-    try { return await bambuGetDevices(accessToken, region || 'global'); }
+  ipcMain.handle('printer-bambu-get-devices', async (_, { accessToken }) => {
+    try { return await bambuGetDevices(accessToken); }
     catch (e) { return { error: e.message }; }
   });
 
@@ -1161,7 +1225,7 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
     // Without this, clicking "Reconnect" with a stale stored token causes CONNACK 5.
     if (isExpired(resolved.accessToken) && resolved.refreshToken) {
       try {
-        const r = await bambuRefresh(resolved.refreshToken, resolved.region || 'global');
+        const r = await bambuRefresh(resolved.refreshToken);
         const newAccessToken = r.accessToken || r.token;
         if (newAccessToken) {
           resolved = { ...resolved, accessToken: newAccessToken, refreshToken: r.refreshToken || resolved.refreshToken };
@@ -1173,21 +1237,14 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
     return { ok: true };
   });
 
-  ipcMain.handle('printer-bambu-get-uid', async (_, { accessToken, region }) => {
-    try { return { uid: await bambuGetUid(accessToken, region || 'global') }; }
+  ipcMain.handle('printer-bambu-get-uid', async (_, { accessToken }) => {
+    try { return { uid: await bambuGetUid(accessToken) }; }
     catch (e) { return { error: e.message }; }
   });
 
   ipcMain.handle('printer-bambu-get-tasks', async (_, { accessToken, page, limit, region }) => {
     try { return await bambuGetTasks(accessToken, page || 1, limit || 20, region || 'global'); }
-    catch (e) {
-      const isAuthErr  = e.httpStatus === 401 || e.httpStatus === 403;
-      const isNotFound = e.httpStatus === 404;
-      const error = isAuthErr  ? 'Bambu session expired — please disconnect and reconnect your Bambu account'
-                  : isNotFound ? 'Print history is not available for this Bambu account'
-                  : e.message;
-      return { error };
-    }
+    catch (e) { return { error: e.message }; }
   });
 
   ipcMain.handle('printer-bambu-disconnect', () => { disconnectBambu(); return { ok: true }; });
@@ -1215,45 +1272,6 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
   ipcMain.handle('printer-snap-start', (_, { printer }) => { startSnapPoll(printer); return { ok: true }; });
   ipcMain.handle('printer-snap-stop',  (_, { id })      => { stopSnapPoll(id); return { ok: true }; });
 
-  // ─── Print control: Bambu ────────────────────────────────────────────────────
-  // cmd: 'stop' | 'pause' | 'resume'
-  ipcMain.handle('printer-bambu-print-cmd', (_, { serial, cmd }) => {
-    try {
-      const payload = JSON.stringify({ print: { sequence_id: '0', command: cmd, param: '' } });
-      const topic   = `device/${serial}/request`;
-      let sent = false;
-      if (mqttClient?.connected) {
-        mqttClient.publish(topic, payload);
-        sent = true;
-      }
-      if (lanMqttClient?.connected) {
-        lanMqttClient.publish(topic, payload);
-        sent = true;
-      }
-      if (!sent) return { error: 'Not connected to printer' };
-      return { ok: true };
-    } catch (e) { return { error: e.message }; }
-  });
-
-  // ─── Print control: Snapmaker ────────────────────────────────────────────────
-  // cmd: 'stop' | 'pause' | 'resume'
-  ipcMain.handle('printer-snap-print-cmd', async (_, { id, cmd }) => {
-    const printer = (() => {
-      try { const s = loadSettings(); return (s?.printers || []).find(p => p.id === id); } catch { return null; }
-    })();
-    if (!printer) return { error: 'Printer not found' };
-    const { ip, token } = printer;
-    try {
-      let r;
-      if (cmd === 'stop') {
-        r = await httpReq('DELETE', `http://${ip}:8080/api/v1/print${token ? `?token=${token}` : ''}`, null);
-      } else {
-        r = await httpReq('POST', `http://${ip}:8080/api/v1/print/${cmd}${token ? `?token=${token}` : ''}`, null);
-      }
-      return { ok: true, status: r.status };
-    } catch (e) { return { error: e.message }; }
-  });
-
   ipcMain.handle('printer-bambu-camera-start', (_, { serial, ip, accessCode }) => {
     // Auto-lookup ip and accessCode from the cloud device list when not supplied.
     // The Bambu bind API returns 'ip' and 'dev_access_code' for each device, so
@@ -1276,13 +1294,44 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
     stopCameraStream(serial); return { ok: true };
   });
 
+  // ── Camera relay IPC ───────────────────────────────────────────────────────
+  // Start relaying all active camera streams to the cloud server.
+  // cloudApiUrl: base URL of the cloud API, e.g. https://your-app.onrender.com
+  // token:       CAMERA_RELAY_TOKEN configured in the Render environment
+  // Print control commands (pause / resume / stop) via MQTT
+  ipcMain.handle('printer-bambu-print-cmd', (_, { serial, cmd }) => {
+    if (!['pause', 'resume', 'stop', 'unload_filament'].includes(cmd)) return { error: 'Invalid command' };
+    if (!mqttClient?.connected) return { error: 'Not connected to Bambu' };
+    const payload = JSON.stringify({ print: { sequence_id: '0', command: cmd, param: '' } });
+    mqttClient.publish(`device/${serial}/request`, payload);
+    return { ok: true };
+  });
+
+  // Snapmaker print control
+  ipcMain.handle('printer-snap-print-cmd', async (_, { id, cmd }) => {
+    const cfg = snapConfigs[id];
+    if (!cfg) return { error: 'Snapmaker not connected' };
+    try {
+      const map = { pause: 'pause_print', resume: 'resume_print', stop: 'stop_print' };
+      const endpoint = map[cmd];
+      if (!endpoint) return { error: 'Invalid command' };
+      const res = await httpReq('POST', `http://${cfg.ip}:7125/printer/print/${endpoint}`, null, cfg.token);
+      return res.status < 300 ? { ok: true } : { error: `HTTP ${res.status}` };
+    } catch (e) { return { error: e.message }; }
+  });
+
   ipcMain.handle('camera-relay-start', (_, { cloudApiUrl, token }) => {
-    try { startRelay(cloudApiUrl, token); return { ok: true }; }
-    catch (e) { return { error: e.message }; }
+    try {
+      startRelay(cloudApiUrl, token);
+      return { ok: true };
+    } catch (e) {
+      return { error: e.message };
+    }
   });
 
   ipcMain.handle('camera-relay-stop', () => {
-    stopRelay(); return { ok: true };
+    stopRelay();
+    return { ok: true };
   });
 
   ipcMain.handle('camera-relay-status', () => {

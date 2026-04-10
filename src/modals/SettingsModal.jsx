@@ -24,6 +24,20 @@ export default function SettingsModal() {
     addOutgoingDest, removeOutgoingDest, moveOutgoingDest,
   } = useApp();
 
+  const [isCloud, setIsCloud] = useState(false);
+  const [pushStatus, setPushStatus] = useState('');
+  useState(() => {
+    if (window.electronAPI?.isUsingCloud) {
+      window.electronAPI.isUsingCloud().then(v => setIsCloud(!!v));
+    }
+  });
+
+  const handlePushToCloud = async () => {
+    setPushStatus('pushing…');
+    const r = await window.electronAPI.pushLocalToCloud();
+    setPushStatus(r.ok ? 'pushed — reload the app to confirm' : ('error: ' + r.error));
+  };
+
   const [form, setForm] = useState({
     theme: appSettings.theme || 'auto',
     threeMfFolder: appSettings.threeMfFolder || '',
@@ -201,6 +215,12 @@ export default function SettingsModal() {
           </div>
           <div className="settings-footer">
             <button className="btn" onClick={() => openModal('filament-library')} style={{ marginRight: 'auto' }}>📚 Filament Library</button>
+            {isElectron && isCloud && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {pushStatus && <span style={{ fontSize: 11, color: pushStatus.startsWith('error') ? 'var(--red-text, #ef4444)' : 'var(--text2)' }}>{pushStatus}</span>}
+                <button className="btn" onClick={handlePushToCloud} title="Overwrite Supabase with your local data.json">↑ Push local to cloud</button>
+              </div>
+            )}
             <button className="btn" onClick={closeModal}>Cancel</button>
             <button className="btn btn-primary" onClick={handleSave}>Save</button>
           </div>

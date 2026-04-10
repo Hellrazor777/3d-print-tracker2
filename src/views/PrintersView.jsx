@@ -10,6 +10,80 @@ function fmtHmsCode(h) {
   return `HMS_${a.slice(0, 4)}_${a.slice(4)}_${c.slice(0, 4)}_${c.slice(4)}`;
 }
 
+// Decode an HMS code string into a human-readable description.
+// Uses exact lookup first, then falls back to module + error-type pattern decode.
+const HMS_EXACT = {
+  'HMS_0500_0500_0001_0007': 'AMS1 Slot 1 – Filament run out',
+  'HMS_0500_0500_0002_0007': 'AMS1 Slot 2 – Filament run out',
+  'HMS_0500_0500_0003_0007': 'AMS1 Slot 3 – Filament run out',
+  'HMS_0500_0500_0004_0007': 'AMS1 Slot 4 – Filament run out',
+  'HMS_0500_0500_0001_0002': 'AMS1 Slot 1 – Filament jammed',
+  'HMS_0500_0500_0002_0002': 'AMS1 Slot 2 – Filament jammed',
+  'HMS_0500_0500_0003_0002': 'AMS1 Slot 3 – Filament jammed',
+  'HMS_0500_0500_0004_0002': 'AMS1 Slot 4 – Filament jammed',
+  'HMS_0500_0500_0001_0003': 'AMS1 Slot 1 – Cannot load filament',
+  'HMS_0500_0500_0002_0003': 'AMS1 Slot 2 – Cannot load filament',
+  'HMS_0500_0500_0003_0003': 'AMS1 Slot 3 – Cannot load filament',
+  'HMS_0500_0500_0004_0003': 'AMS1 Slot 4 – Cannot load filament',
+  'HMS_0500_0500_0001_0004': 'AMS1 Slot 1 – Cannot unload filament',
+  'HMS_0500_0500_0002_0004': 'AMS1 Slot 2 – Cannot unload filament',
+  'HMS_0500_0500_0003_0004': 'AMS1 Slot 3 – Cannot unload filament',
+  'HMS_0500_0500_0004_0004': 'AMS1 Slot 4 – Cannot unload filament',
+  'HMS_0500_0500_0001_0008': 'AMS1 Slot 1 – Filament tangle detected',
+  'HMS_0500_0500_0002_0008': 'AMS1 Slot 2 – Filament tangle detected',
+  'HMS_0500_0500_0003_0008': 'AMS1 Slot 3 – Filament tangle detected',
+  'HMS_0500_0500_0004_0008': 'AMS1 Slot 4 – Filament tangle detected',
+  'HMS_0500_0500_0001_000B': 'AMS1 – Humidity too high, check drying',
+  'HMS_0500_0500_0001_000C': 'AMS1 – Temperature too high',
+  'HMS_0500_0500_0001_000D': 'AMS1 – AMS door open',
+  'HMS_0500_0500_0001_0006': 'AMS1 – Communication error',
+  'HMS_0300_4000_0001_0003': 'Extruder – Filament clog detected',
+  'HMS_0300_4000_0001_0004': 'Extruder – Cannot feed filament',
+  'HMS_0300_4000_0001_0007': 'Extruder – Filament run out at nozzle',
+  'HMS_0C00_0100_0001_0001': 'Nozzle temperature too low',
+  'HMS_0C00_0100_0001_0002': 'Nozzle temperature too high',
+  'HMS_0C00_0100_0001_0003': 'Nozzle heater failure',
+  'HMS_0C00_0200_0001_0001': 'Heatbed temperature too low',
+  'HMS_0C00_0200_0001_0002': 'Heatbed temperature too high',
+  'HMS_0C00_0200_0001_0003': 'Heatbed heater failure',
+  'HMS_0200_0300_0001_0001': 'X-axis motor stall',
+  'HMS_0200_0400_0001_0001': 'Y-axis motor stall',
+  'HMS_0200_0500_0001_0001': 'Z-axis motor stall',
+  'HMS_0200_0600_0001_0001': 'Extruder motor stall',
+  'HMS_0400_0100_0001_0001': 'First layer inspection failed',
+  'HMS_0400_0100_0001_0002': 'Spaghetti detected – print halted',
+  'HMS_0400_0100_0001_0004': 'Purge wiper error',
+  'HMS_0200_0100_0001_0002': 'MC board: communication timeout',
+  'HMS_0100_0100_0001_0001': 'Mainboard: fatal error',
+  'HMS_0700_0100_0001_0001': 'Chamber temperature too high',
+};
+
+// Module labels for fallback decoding
+const HMS_MODULES = {
+  '0500': 'AMS', '0300': 'Extruder', '0200': 'Motion system',
+  '0C00': 'Temperature', '0700': 'Chamber', '0400': 'Vision/camera',
+  '0100': 'Mainboard', '0600': 'Xcam',
+};
+const HMS_ERR_TYPES = {
+  '0001': 'jammed / blocked', '0002': 'motor stall', '0003': 'cannot load',
+  '0004': 'cannot unload', '0005': 'extrusion error', '0006': 'communication error',
+  '0007': 'filament run out', '0008': 'tangle detected', '000B': 'humidity too high',
+  '000C': 'temperature too high', '000D': 'door open',
+};
+
+function hmsDescription(codeStr) {
+  if (HMS_EXACT[codeStr]) return HMS_EXACT[codeStr];
+  // Pattern fallback: decode by module + slot + error type
+  const parts = codeStr.replace('HMS_', '').split('_');
+  if (parts.length !== 4) return null;
+  const [a1, , c1, c2] = parts;
+  const mod  = HMS_MODULES[a1] || `module ${a1}`;
+  const slot = parseInt(c1, 16);
+  const err  = HMS_ERR_TYPES[c2] || `error ${c2}`;
+  if (a1 === '0500' && slot >= 1 && slot <= 16) return `${mod} Slot ${slot} – ${err}`;
+  return `${mod} – ${err}`;
+}
+
 function fmtTime(minutes) {
   if (!minutes || minutes <= 0) return '—';
   const h = Math.floor(minutes / 60), m = minutes % 60;
@@ -38,34 +112,53 @@ function fmtEta(minutes) {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function parseBambuTs(ts) {
+  if (!ts) return NaN;
+  if (typeof ts === 'string') return Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T'));
+  return ts > 1e12 ? ts : ts * 1000;
+}
 function fmtDate(ts) {
-  if (!ts) return '—';
-  let ms;
-  if (typeof ts === 'string') {
-    // Bambu returns "YYYY-MM-DD HH:mm:ss" — replace space with T for reliable parsing
-    ms = Date.parse(ts.includes('T') ? ts : ts.replace(' ', 'T'));
-  } else {
-    ms = ts > 1e12 ? ts : ts * 1000;
-  }
-  const d = new Date(ms);
+  const d = new Date(parseBambuTs(ts));
   if (isNaN(d)) return '—';
   return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
 }
+function fmtClock(ts) {
+  const d = new Date(parseBambuTs(ts));
+  if (isNaN(d)) return '—';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+function getIsoDay(ts) {
+  const d = new Date(parseBambuTs(ts));
+  if (isNaN(d)) return 'unknown';
+  // Use local date parts so AEST/timezone doesn't roll the day back to UTC-prev-day
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 
 const BAMBU_STATUS_MAP = {
-  1: 'running', 2: 'pause', 3: 'failed', 4: 'finish', 5: 'closed',
-  6: 'slicing', 7: 'uploading',
+  1: 'preparing', 2: 'finish', 3: 'failed', 4: 'finish', 5: 'paused',
+  6: 'cancelled', 7: 'slicing', 8: 'uploading',
 };
-function bambuStatusLabel(status) {
+function hasEnded(endTime) {
+  if (!endTime) return false;
+  const ms = parseBambuTs(endTime);
+  // Reject: invalid, pre-2000 epoch, or future (projected end time for still-running prints)
+  return !isNaN(ms) && ms > 946684800000 && ms <= Date.now();
+}
+function bambuStatusLabel(status, endTime) {
+  if (!hasEnded(endTime)) return 'printing';
   if (status === null || status === undefined) return '';
   if (typeof status === 'number') return BAMBU_STATUS_MAP[status] || `status ${status}`;
   return String(status).toLowerCase();
 }
-function bambuStatusColor(status) {
-  const s = typeof status === 'number' ? status : null;
-  const label = bambuStatusLabel(status);
-  if (s === 4 || label === 'finish') return 'var(--green-text, #22c55e)';
-  if (s === 3 || s === 5 || label === 'failed' || label === 'closed') return 'var(--red-text, #ef4444)';
+function bambuStatusColor(status, endTime) {
+  const label = bambuStatusLabel(status, endTime);
+  if (label === 'finish')   return 'var(--green-text, #22c55e)';
+  if (label === 'failed')   return 'var(--red-text, #ef4444)';
+  if (label === 'paused')   return 'var(--amber-text, #f59e0b)';
+  if (label === 'printing') return 'var(--accent, #5b8dee)';
   return 'var(--text2)';
 }
 
@@ -123,58 +216,123 @@ async function apiFetch(path, options = {}) {
 // ─── TempGauge ────────────────────────────────────────────────────────────────
 
 function TempGauge({ label, current, target }) {
-  const pct = target > 0 ? Math.min(current / target, 1) : 0;
+  const r = 26, cx = 32, cy = 32;
+  const circ  = 2 * Math.PI * r;   // full circumference
+  const arcLen = circ * 0.75;       // 270° arc
+  const pct    = target > 0 ? Math.min(current / target, 1) : 0;
+  const filled = arcLen * pct;
+  const atTarget = target > 0 && current >= target - 3;
+  const heating  = target > 0 && current < target - 3;
+  const arcColor = atTarget ? 'var(--green, #7ab83a)'
+                 : heating  ? 'var(--accent, #5b8dee)'
+                 :            'var(--border2)';
   return (
-    <div style={{ textAlign: 'center', minWidth: 80 }}>
-      <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)' }}>{Math.round(current)}°C</div>
-      <div style={{ fontSize: 10, color: 'var(--text2)', marginTop: 1 }}>{label}</div>
-      <div style={{ fontSize: 10, color: 'var(--text2)' }}>/ {Math.round(target)}°C</div>
-      <div style={{ marginTop: 4, height: 3, background: 'var(--border2)', borderRadius: 2 }}>
-        <div style={{ width: `${Math.round(pct * 100)}%`, height: '100%', background: 'var(--accent, #5b8dee)', borderRadius: 2, transition: 'width .6s' }} />
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ position: 'relative', width: 64, height: 64 }}>
+        <svg width="64" height="64">
+          {/* Background track */}
+          <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--border2)" strokeWidth="5"
+            strokeDasharray={`${arcLen} ${circ - arcLen}`} strokeLinecap="round"
+            transform={`rotate(135, ${cx}, ${cy})`} />
+          {/* Filled arc */}
+          {pct > 0 && (
+            <circle cx={cx} cy={cy} r={r} fill="none" stroke={arcColor} strokeWidth="5"
+              strokeDasharray={`${filled} ${circ - filled}`} strokeLinecap="round"
+              transform={`rotate(135, ${cx}, ${cy})`}
+              style={{ transition: 'stroke-dasharray .6s, stroke .4s' }} />
+          )}
+        </svg>
+        <div style={{
+          position: 'absolute', inset: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', paddingBottom: 6,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', lineHeight: 1 }}>{Math.round(current)}°</div>
+          {target > 0 && <div style={{ fontSize: 9, color: 'var(--text2)', lineHeight: 1.4 }}>/{Math.round(target)}°</div>}
+        </div>
       </div>
+      <div style={{ fontSize: 9, color: 'var(--text2)', marginTop: -2, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
     </div>
   );
 }
 
 // ─── AmsDisplay ──────────────────────────────────────────────────────────────
 
-function FilamentSwatch({ tray, isActive, size = 32 }) {
+function FilamentSwatch({ tray, isActive, size = 32, onUnload }) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [unloading, setUnloading] = useState(false);
   if (!tray) return null;
   const color = amsHexColor(tray.tray_color);
   const hasFilament = !!(tray.tray_type);
   const textColor = hasFilament ? (isDark(color) ? '#fff' : '#000') : 'var(--text2)';
   const label = tray.tray_type ? tray.tray_type.slice(0, 4) : '';
   const remain = tray.remain >= 0 ? ` (${tray.remain}%)` : '';
-  const tooltip = hasFilament
-    ? `${tray.tray_sub_brands || tray.tray_type}${remain}`
-    : 'Empty';
+  const tooltip = hasFilament ? `${tray.tray_sub_brands || tray.tray_type}${remain}` : 'Empty';
+
+  const handleUnload = async (e) => {
+    e.stopPropagation();
+    if (!onUnload) return;
+    setUnloading(true);
+    await onUnload();
+    setUnloading(false);
+    setPopoverOpen(false);
+  };
+
   return (
-    <div
-      title={tooltip}
-      style={{
-        width: size, height: size, borderRadius: 5,
-        background: hasFilament ? color : 'var(--bg3, var(--bg))',
-        border: isActive ? '2px solid var(--accent, #5b8dee)' : '0.5px solid var(--border2)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 7, color: textColor, fontWeight: 700,
-        position: 'relative', flexShrink: 0, cursor: 'default',
-        boxShadow: isActive ? '0 0 0 1px var(--accent, #5b8dee)' : 'none',
-      }}
-    >
-      {label}
-      {isActive && (
-        <span style={{
-          position: 'absolute', top: -5, right: -5,
-          width: 9, height: 9, borderRadius: '50%',
-          background: 'var(--accent, #5b8dee)',
-          border: '1.5px solid var(--bg2)',
-        }} />
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      <div
+        title={hasFilament && !onUnload ? tooltip : undefined}
+        onClick={() => hasFilament && onUnload && setPopoverOpen(v => !v)}
+        style={{
+          width: size, height: size, borderRadius: 5,
+          background: hasFilament ? color : 'var(--bg3, var(--bg))',
+          border: isActive ? '2px solid var(--accent, #5b8dee)' : '0.5px solid var(--border2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 7, color: textColor, fontWeight: 700,
+          position: 'relative',
+          cursor: hasFilament && onUnload ? 'pointer' : 'default',
+          boxShadow: isActive ? '0 0 0 1px var(--accent, #5b8dee)' : 'none',
+        }}
+      >
+        {label}
+        {isActive && (
+          <span style={{
+            position: 'absolute', top: -5, right: -5,
+            width: 9, height: 9, borderRadius: '50%',
+            background: 'var(--accent, #5b8dee)',
+            border: '1.5px solid var(--bg2)',
+          }} />
+        )}
+      </div>
+      {popoverOpen && (
+        <div style={{
+          position: 'absolute', top: size + 6, left: 0,
+          background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 8,
+          padding: '8px 10px', zIndex: 100, minWidth: 110, boxShadow: '0 4px 16px rgba(0,0,0,.2)',
+          fontSize: 11,
+        }}>
+          <div style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 4, whiteSpace: 'nowrap' }}>{tooltip}</div>
+          <button
+            className="btn"
+            style={{ fontSize: 11, padding: '4px 10px', width: '100%', marginBottom: 4 }}
+            disabled={unloading}
+            onClick={handleUnload}
+          >
+            {unloading ? 'Unloading…' : '⏏ Unload'}
+          </button>
+          <button
+            className="btn"
+            style={{ fontSize: 11, padding: '3px 10px', width: '100%', color: 'var(--text2)' }}
+            onClick={(e) => { e.stopPropagation(); setPopoverOpen(false); }}
+          >
+            Cancel
+          </button>
+        </div>
       )}
     </div>
   );
 }
 
-function AmsDisplay({ ams, vtTray }) {
+function AmsDisplay({ ams, vtTray, onUnload }) {
   const units = ams?.ams || [];
   const nowTray = parseInt(ams?.tray_now ?? -1, 10);
   const vtActive = nowTray === 254;
@@ -189,7 +347,7 @@ function AmsDisplay({ ams, vtTray }) {
           Filament
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FilamentSwatch tray={vtTray} isActive={false} size={36} />
+          <FilamentSwatch tray={vtTray} isActive={false} size={36} onUnload={onUnload} />
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
               {vtTray.tray_sub_brands || vtTray.tray_type}
@@ -213,13 +371,13 @@ function AmsDisplay({ ams, vtTray }) {
         <div key={ui} style={{ display: 'flex', gap: 4, marginBottom: ui < units.length - 1 ? 4 : 0 }}>
           {(unit.tray || []).map((tray, ti) => {
             const globalIdx = ui * 4 + ti;
-            return <FilamentSwatch key={ti} tray={tray} isActive={globalIdx === nowTray} />;
+            return <FilamentSwatch key={ti} tray={tray} isActive={globalIdx === nowTray} onUnload={onUnload} />;
           })}
         </div>
       ))}
       {hasVt && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 6, borderTop: '0.5px solid var(--border)' }}>
-          <FilamentSwatch tray={vtTray} isActive={vtActive} />
+          <FilamentSwatch tray={vtTray} isActive={vtActive} onUnload={onUnload} />
           <div>
             <div style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Ext</div>
             <div style={{ fontSize: 11, color: 'var(--text)' }}>{vtTray.tray_sub_brands || vtTray.tray_type}</div>
@@ -723,14 +881,22 @@ function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveCon
   const gstate = state?.gcode_state || (state?.status) || 'OFFLINE';
   const isPrinting = gstate === 'RUNNING';
   const isOffline = !state || gstate === 'OFFLINE';
-  const progress = state?.progress ?? 0;
-  const eta = fmtEta(state?.remaining_min);
-  const lastSeen = state?.ts ? fmtAgo(state.ts) : null;
+  const hasError  = (state?.hms && state.hms.length > 0) || gstate === 'FAILED';
+  const progress  = state?.progress ?? 0;
+  const eta       = fmtEta(state?.remaining_min);
+  const lastSeen  = state?.ts ? fmtAgo(state.ts) : null;
+
+  const cardBorderColor = hasError   ? 'var(--red-text)'
+                        : isPrinting ? 'var(--green)'
+                        : isOffline  ? 'var(--border2)'
+                        :              'var(--amber-text)';
+  const cardBorderWidth = isOffline ? '0.5px' : '2px';
 
   return (
     <div style={{
-      background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 12,
-      padding: 0, overflow: 'hidden',
+      background: 'var(--bg2)',
+      border: `${cardBorderWidth} solid ${cardBorderColor}`,
+      borderRadius: 12, padding: 0, overflow: 'hidden',
     }}>
       {/* Inline camera feed at top of card */}
       <InlineCameraFeed
@@ -835,23 +1001,34 @@ function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveCon
         {/* HMS errors */}
         {state?.hms && state.hms.length > 0 && (
           <div style={{ marginBottom: 8, padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '0.5px solid rgba(239,68,68,.35)', borderRadius: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--red-text, #ef4444)', marginBottom: 4 }}>⚠ HMS Error{state.hms.length > 1 ? 's' : ''}</div>
-            {state.hms.map((h, i) => (
-              <div key={i} style={{ fontSize: 11, color: 'var(--red-text, #ef4444)', fontFamily: 'monospace' }}>
-                {fmtHmsCode(h)}
-              </div>
-            ))}
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--red-text, #ef4444)', marginBottom: 6 }}>⚠ HMS Error{state.hms.length > 1 ? 's' : ''}</div>
+            {state.hms.map((h, i) => {
+              const code = fmtHmsCode(h);
+              const desc = hmsDescription(code);
+              return (
+                <div key={i} style={{ marginBottom: i < state.hms.length - 1 ? 6 : 0 }}>
+                  {desc && <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--red-text, #ef4444)', marginBottom: 2 }}>{desc}</div>}
+                  <div style={{ fontSize: 10, color: 'rgba(239,68,68,.7)', fontFamily: 'monospace' }}>{code}</div>
+                </div>
+              );
+            })}
           </div>
         )}
 
         {state && !isOffline && (
-          <div style={{ display: 'flex', justifyContent: 'space-around', paddingTop: 8, borderTop: '0.5px solid var(--border)' }}>
-            <TempGauge label="Nozzle" current={state.nozzle_temp ?? 0} target={state.nozzle_target ?? 0} />
-            <div style={{ width: '0.5px', background: 'var(--border)' }} />
-            <TempGauge label="Bed" current={state.bed_temp ?? 0} target={state.bed_target ?? 0} />
+          <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-start', paddingTop: 10, borderTop: '0.5px solid var(--border)' }}>
+            <TempGauge label="Nozzle"  current={state.nozzle_temp   ?? 0} target={state.nozzle_target ?? 0} />
+            <TempGauge label="Bed"     current={state.bed_temp      ?? 0} target={state.bed_target    ?? 0} />
+            <TempGauge label="Chamber" current={state.chamber_temp  ?? 0} target={0} />
           </div>
         )}
-        {state && (state.ams || state.vt_tray) && <AmsDisplay ams={state.ams} vtTray={state.vt_tray} />}
+        {state && (state.ams || state.vt_tray) && (
+          <AmsDisplay
+            ams={state.ams}
+            vtTray={state.vt_tray}
+            onUnload={onPrintCmd ? () => onPrintCmd('unload_filament') : null}
+          />
+        )}
       </div>
     </div>
   );
@@ -1136,12 +1313,15 @@ function defaultWatts(deviceName) {
   return 350;
 }
 
-function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings, isElectron }) {
-  const [tasks,     setTasks]     = useState(null);
-  const [loading,   setLoading]   = useState(false);
-  const [error,     setError]     = useState('');
-  const [expanded,  setExpanded]  = useState(false);
-  const [showPower, setShowPower] = useState(false);
+function PrintHistory({ accessToken, region, devices, powerSettings, onSavePowerSettings, isElectron }) {
+  const [tasks,         setTasks]         = useState(null);
+  const [total,         setTotal]         = useState(0);
+  const [page,          setPage]          = useState(1);
+  const [loading,       setLoading]       = useState(false);
+  const [error,         setError]         = useState('');
+  const [expanded,      setExpanded]      = useState(false);
+  const [showPower,     setShowPower]     = useState(false);
+  const [collapsedDays, setCollapsedDays] = useState(new Set());
   const [rate,          setRate]          = useState(String(powerSettings?.ratePerKwh ?? '0.30'));
   const [filamentPrice, setFilamentPrice] = useState(String(powerSettings?.filamentPricePerKg ?? '25.00'));
   const [wattMap,       setWattMap]       = useState(powerSettings?.wattsBySerial ?? {});
@@ -1169,26 +1349,30 @@ function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings
     return (g / 1000) * effectiveFilamentPrice;
   }
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (resetPage = true) => {
     if (!accessToken) return;
     setLoading(true); setError('');
+    const nextPage = resetPage ? 1 : page + 1;
     try {
       let result;
       if (isElectron && window.electronAPI?.printerBambuGetTasks) {
-        const r = await window.electronAPI.printerBambuGetTasks(accessToken, 1, 30);
+        const r = await window.electronAPI.printerBambuGetTasks(accessToken, nextPage, 100, region);
         if (r?.error) { setError(r.error); setLoading(false); return; }
         result = r;
       } else {
-        result = await apiFetch('/api/printers/bambu/tasks?page=1&limit=30');
+        result = await apiFetch(`/api/printers/bambu/tasks?page=${nextPage}&limit=100`);
       }
       const list = result?.hits || result?.tasks || [];
-      setTasks(list);
+      const tot  = result?.total ?? result?.totalCount ?? list.length;
+      setTotal(tot);
+      setPage(nextPage);
+      setTasks(prev => resetPage ? list : [...(prev || []), ...list]);
     } catch (e) { setError(e.message || 'Failed to load history'); }
     setLoading(false);
-  }, [accessToken, isElectron]);
+  }, [accessToken, region, isElectron, page]);
 
   useEffect(() => {
-    if (expanded && tasks === null && !loading && !error) { load(); }
+    if (expanded && tasks === null && !loading && !error) { load(true); }
   }, [expanded, tasks, loading, load, error]);
 
   function savePower() {
@@ -1205,6 +1389,7 @@ function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings
   }
 
   const totals = { kwh: 0, powerCost: 0, filamentCost: 0, weightG: 0, prints: 0 };
+  const colourBreakdown = {}; // key = "hex|type"
   if (tasks) {
     tasks.forEach(t => {
       const deviceId = t.deviceId || t.dev_id || '';
@@ -1216,6 +1401,21 @@ function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings
       totals.filamentCost += filCost;
       totals.weightG += weightG;
       totals.prints++;
+
+      // Colour breakdown — distribute weight proportionally by filament length per slot
+      const mappings = (t.amsDetailMapping || []).filter(m => m.sourceColor);
+      if (mappings.length > 0 && weightG > 0) {
+        const totalLen = mappings.reduce((s, m) => s + (parseFloat(m.length) || 0), 0);
+        mappings.forEach(m => {
+          const hex  = `#${(m.sourceColor || '').slice(0, 6)}`;
+          const type = m.filamentType || m.filamentName || '';
+          const key  = `${hex}|${type}`;
+          const share = totalLen > 0 ? (parseFloat(m.length) || 0) / totalLen : 1 / mappings.length;
+          if (!colourBreakdown[key]) colourBreakdown[key] = { hex, type, weightG: 0, cost: 0 };
+          colourBreakdown[key].weightG += weightG * share;
+          colourBreakdown[key].cost    += calcFilament(weightG * share);
+        });
+      }
     });
   }
 
@@ -1243,7 +1443,7 @@ function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings
             <button className="btn" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => setShowPower(s => !s)}>
               {showPower ? 'Hide Settings' : 'Power Settings'}
             </button>
-            <button className="btn" style={{ fontSize: 11, padding: '2px 10px' }} onClick={load} disabled={loading}>
+            <button className="btn" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => load(true)} disabled={loading}>
               {loading ? 'Loading…' : '↻ Refresh'}
             </button>
           </div>
@@ -1295,55 +1495,147 @@ function PrintHistory({ accessToken, devices, powerSettings, onSavePowerSettings
           {loading && <div style={{ padding: '16px', fontSize: 12, color: 'var(--text2)' }}>Loading print history…</div>}
           {tasks && !loading && tasks.length === 0 && <div style={{ padding: '16px', fontSize: 12, color: 'var(--text2)' }}>No print history found.</div>}
 
-          {tasks && !loading && tasks.length > 0 && (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
-                    {['Date', 'File', 'Printer', 'Duration', 'kWh', 'Power $', 'Weight (g)', 'Filament $', 'Total $', 'Status'].map(h => (
-                      <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks.map((t, i) => {
-                    const deviceId  = t.deviceId || t.dev_id || '';
-                    const devName   = devMap[deviceId] || deviceId || '—';
-                    const costSec   = t.costTime || t.printTime || 0;
-                    const weightG   = parseFloat(t.weight || t.filamentWeight || t.filament_weight || 0);
-                    const { kwh, cost: powerCost } = calcPower(deviceId, costSec);
-                    const filCost   = calcFilament(weightG);
-                    const totalCost = powerCost + filCost;
-                    const statusLabel = bambuStatusLabel(t.status);
-                    const statusColor = bambuStatusColor(t.status);
+          {tasks && !loading && tasks.length > 0 && (() => {
+            // Group tasks by calendar day
+            const dayGroups = [];
+            const dayMap = {};
+            tasks.forEach(t => {
+              const ts  = t.startTime || t.createTime || '';
+              const key = getIsoDay(ts);
+              const lbl = fmtDate(ts);
+              if (!dayMap[key]) {
+                const g = { key, label: lbl, tasks: [], kwh: 0, powerCost: 0, weightG: 0, filCost: 0 };
+                dayMap[key] = g; dayGroups.push(g);
+              }
+              const g = dayMap[key];
+              g.tasks.push(t);
+              const did = t.deviceId || t.dev_id || '';
+              const { kwh, cost } = calcPower(did, t.costTime || t.printTime || 0);
+              const wg = parseFloat(t.weight || 0);
+              g.kwh += kwh; g.powerCost += cost; g.weightG += wg; g.filCost += calcFilament(wg);
+            });
+            const toggleDay = (key) => setCollapsedDays(prev => {
+              const next = new Set(prev);
+              next.has(key) ? next.delete(key) : next.add(key);
+              return next;
+            });
+            return (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: '0.5px solid var(--border)' }}>
+                      {['Time', 'File', 'Printer', 'Colours', 'Duration', 'kWh', 'Power $', 'Weight (g)', 'Filament $', 'Total $', 'Status'].map(h => (
+                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  {dayGroups.map(group => {
+                    const isOpen = !collapsedDays.has(group.key);
                     return (
-                      <tr key={t.id || i} style={{ borderBottom: '0.5px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--bg3, rgba(0,0,0,.03))' }}>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDate(t.startTime || t.createTime || t.start_time)}</td>
-                        <td style={{ padding: '7px 12px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }} title={t.title || t.name || t.fileName || ''}>{t.title || t.name || t.fileName || '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{devName || t.deviceName || '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDuration(costSec)}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{kwh > 0 ? kwh.toFixed(3) : '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{powerCost > 0 ? `$${powerCost.toFixed(3)}` : '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{weightG > 0 ? weightG.toFixed(1) : '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{filCost > 0 ? `$${filCost.toFixed(3)}` : '—'}</td>
-                        <td style={{ padding: '7px 12px', color: 'var(--text)', fontWeight: 500, whiteSpace: 'nowrap' }}>{totalCost > 0 ? `$${totalCost.toFixed(3)}` : '—'}</td>
-                        <td style={{ padding: '7px 12px', whiteSpace: 'nowrap', color: statusColor, fontWeight: 500, textTransform: 'capitalize' }}>{statusLabel || '—'}</td>
-                      </tr>
+                      <tbody key={group.key}>
+                        {/* Day header row */}
+                        <tr onClick={() => toggleDay(group.key)}
+                          style={{ cursor: 'pointer', background: 'var(--bg2)', borderTop: '1px solid var(--border2)', userSelect: 'none' }}>
+                          <td colSpan={11} style={{ padding: '8px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontSize: 10, color: 'var(--text2)', display: 'inline-block', transition: 'transform .15s', transform: isOpen ? 'rotate(90deg)' : 'none' }}>▶</span>
+                              <span style={{ fontWeight: 600, fontSize: 12, color: 'var(--text)' }}>{group.label}</span>
+                              <span style={{ fontSize: 11, color: 'var(--text2)' }}>
+                                {group.tasks.length} print{group.tasks.length !== 1 ? 's' : ''} · {group.weightG.toFixed(0)}g · ${(group.powerCost + group.filCost).toFixed(2)}
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+                        {/* Print rows */}
+                        {isOpen && group.tasks.map((t, i) => {
+                          const deviceId    = t.deviceId || t.dev_id || '';
+                          const devName     = devMap[deviceId] || t.deviceName || deviceId || '—';
+                          const costSec     = t.costTime || t.printTime || 0;
+                          const weightG     = parseFloat(t.weight || 0);
+                          const { kwh, cost: powerCost } = calcPower(deviceId, costSec);
+                          const filCost     = calcFilament(weightG);
+                          const totalCost   = powerCost + filCost;
+                          const statusLabel = bambuStatusLabel(t.status, t.endTime);
+                          const statusColor = bambuStatusColor(t.status, t.endTime);
+                          const mappings    = (t.amsDetailMapping || []).filter(m => m.sourceColor);
+                          const totalLen    = mappings.reduce((s, m) => s + (parseFloat(m.length) || 0), 0);
+                          const taskColours = mappings.map(m => {
+                            const hex   = `#${(m.sourceColor || '').slice(0, 6)}`;
+                            const type  = m.filamentType || m.filamentName || '';
+                            const share = totalLen > 0 ? (parseFloat(m.length) || 0) / totalLen : 1 / mappings.length;
+                            return { hex, type, weightG: weightG * share };
+                          }).filter(c => c.hex.length === 7);
+                          return (
+                            <tr key={t.id || i} style={{ borderBottom: '0.5px solid var(--border)', background: i % 2 === 0 ? 'transparent' : 'var(--bg3, rgba(0,0,0,.03))' }}>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtClock(t.startTime || t.createTime)}</td>
+                              <td style={{ padding: '7px 12px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text)' }} title={t.title || t.name || ''}>{t.title || t.name || '—'}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{devName}</td>
+                              <td style={{ padding: '7px 12px' }}>
+                                {taskColours.length > 0 ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                    {taskColours.map((c, ci) => (
+                                      <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 5 }} title={[c.type, c.hex].filter(Boolean).join(' · ')}>
+                                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: c.hex, border: '1px solid rgba(128,128,128,.35)', flexShrink: 0 }} />
+                                        <span style={{ fontSize: 10, color: 'var(--text2)', whiteSpace: 'nowrap' }}>
+                                          {c.type ? `${c.type} · ` : ''}{weightG > 0 ? `${c.weightG.toFixed(0)}g` : ''}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : <span style={{ color: 'var(--text2)' }}>—</span>}
+                              </td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{fmtDuration(costSec)}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{kwh > 0 ? kwh.toFixed(3) : '—'}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{powerCost > 0 ? `$${powerCost.toFixed(3)}` : '—'}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{weightG > 0 ? weightG.toFixed(1) : '—'}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text2)', whiteSpace: 'nowrap' }}>{filCost > 0 ? `$${filCost.toFixed(3)}` : '—'}</td>
+                              <td style={{ padding: '7px 12px', color: 'var(--text)', fontWeight: 500, whiteSpace: 'nowrap' }}>{totalCost > 0 ? `$${totalCost.toFixed(3)}` : '—'}</td>
+                              <td style={{ padding: '7px 12px', whiteSpace: 'nowrap', color: statusColor, fontWeight: 500, textTransform: 'capitalize' }}>{statusLabel || '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
                     );
                   })}
-                </tbody>
-                <tfoot>
-                  <tr style={{ borderTop: '0.5px solid var(--border2)' }}>
-                    <td colSpan={4} style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Total ({totals.prints} prints)</td>
-                    <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{totals.kwh.toFixed(2)}</td>
-                    <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>${totals.powerCost.toFixed(2)}</td>
-                    <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{totals.weightG > 0 ? totals.weightG.toFixed(0) : '—'}</td>
-                    <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>${totals.filamentCost.toFixed(2)}</td>
-                    <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--accent, #5b8dee)' }}>${(totals.powerCost + totals.filamentCost).toFixed(2)}</td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
+                  <tfoot>
+                    <tr style={{ borderTop: '1px solid var(--border2)' }}>
+                      <td colSpan={5} style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>Total ({totals.prints} prints{total > totals.prints ? ` of ${total}` : ''})</td>
+                      <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{totals.kwh.toFixed(2)}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>${totals.powerCost.toFixed(2)}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{totals.weightG > 0 ? totals.weightG.toFixed(0) : '—'}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>${totals.filamentCost.toFixed(2)}</td>
+                      <td style={{ padding: '8px 12px', fontSize: 12, fontWeight: 700, color: 'var(--accent, #5b8dee)' }}>${(totals.powerCost + totals.filamentCost).toFixed(2)}</td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            );
+          })()}
+          {tasks && !loading && total > tasks.length && (
+            <div style={{ padding: '10px 16px', borderTop: '0.5px solid var(--border)' }}>
+              <button className="btn" style={{ fontSize: 12 }} onClick={() => load(false)} disabled={loading}>
+                {loading ? 'Loading…' : `Load more (${tasks.length} of ${total})`}
+              </button>
+            </div>
+          )}
+
+          {tasks && Object.keys(colourBreakdown).length > 0 && (
+            <div style={{ borderTop: '0.5px solid var(--border2)', padding: '12px 16px' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: 'var(--text)' }}>🎨 Filament Used by Colour</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {Object.values(colourBreakdown)
+                  .sort((a, b) => b.weightG - a.weightG)
+                  .map((c, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'var(--bg3, rgba(0,0,0,.04))', borderRadius: 8, padding: '6px 10px', border: '0.5px solid var(--border)' }}>
+                      <span style={{ width: 14, height: 14, borderRadius: '50%', background: c.hex, border: '1px solid rgba(128,128,128,.35)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 11, color: 'var(--text2)' }}>{c.type || 'Filament'}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{c.weightG.toFixed(0)}g</span>
+                      <span style={{ fontSize: 11, color: 'var(--text2)' }}>${c.cost.toFixed(2)}</span>
+                    </div>
+                  ))
+                }
+              </div>
             </div>
           )}
         </div>
@@ -1792,6 +2084,7 @@ export default function PrintersView() {
       {hasBambu && (
         <PrintHistory
           accessToken={bambuAuth?.accessToken}
+          region={bambuAuth?.region}
           devices={bambuDevices}
           powerSettings={powerSettings}
           onSavePowerSettings={handleSavePowerSettings}

@@ -36,7 +36,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printerBambuConnect:      (auth)                     => ipcRenderer.invoke('printer-bambu-connect', { auth }),
   printerBambuDisconnect:   ()                         => ipcRenderer.invoke('printer-bambu-disconnect'),
   printerBambuRefreshStatus:(serial)                   => ipcRenderer.invoke('printer-bambu-refresh-status', { serial }),
-  printerBambuGetTasks:     (accessToken, page, limit) => ipcRenderer.invoke('printer-bambu-get-tasks', { accessToken, page, limit }),
+  printerBambuGetTasks:     (accessToken, page, limit, region) => ipcRenderer.invoke('printer-bambu-get-tasks', { accessToken, page, limit, region }),
   printerBambuCameraStart:  (serial, ip, accessCode)   => ipcRenderer.invoke('printer-bambu-camera-start', { serial, ip, accessCode }),
   printerBambuCameraStop:   (serial)                   => ipcRenderer.invoke('printer-bambu-camera-stop', { serial }),
   onBambuCameraFrame: (cb) => {
@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   printerSnapConnectReq:    (ip)                       => ipcRenderer.invoke('printer-snap-connect-request', { ip }),
   printerSnapStart:         (printer)                  => ipcRenderer.invoke('printer-snap-start', { printer }),
   printerSnapStop:          (id)                       => ipcRenderer.invoke('printer-snap-stop', { id }),
+  printerBambuPrintCmd:     (serial, cmd)              => ipcRenderer.invoke('printer-bambu-print-cmd', { serial, cmd }),
+  printerSnapPrintCmd:      (id, cmd)                  => ipcRenderer.invoke('printer-snap-print-cmd', { id, cmd }),
   onPrinterUpdate: (cb) => {
     ipcRenderer.on('printer-update', cb);
     return () => ipcRenderer.removeListener('printer-update', cb);

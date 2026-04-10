@@ -10,6 +10,7 @@ export default function AddInventoryModal() {
   const handleSave = () => {
     if (!name.trim()) return;
     addInventoryManual(name.trim(), parseInt(qty) || 0, cat.trim());
+    closeModal();
   };
 
   return (

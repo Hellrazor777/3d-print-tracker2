@@ -13,7 +13,11 @@ export default function Stats() {
 
   const printerStates = Object.values(printerStatus || {});
   const printing = printerStates.filter(s => (s?.gcode_state || s?.status) === 'RUNNING').length;
-  const idle     = printerStates.filter(s => (s?.gcode_state || s?.status) === 'IDLE').length;
+  // Count as idle: IDLE, FINISH, or PREPARE — all mean connected but not currently printing
+  const idle = printerStates.filter(s => {
+    const gs = s?.gcode_state || s?.status || '';
+    return gs === 'IDLE' || gs === 'FINISH' || gs === 'PREPARE';
+  }).length;
 
   return (
     <div className="stats">

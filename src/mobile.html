@@ -172,6 +172,7 @@
 
 <script>
 let inventory = [];
+let outgoingDests = ['store', 'markets', 'website'];
 let expandedId = null;
 let logQty = 1;
 let selectedDest = 'store';
@@ -184,9 +185,17 @@ let builtDelta = 0;
 
 async function reload() {
   try {
-    const res = await fetch('/api/data?t=' + Date.now(), { cache: 'no-store' });
-    const data = await res.json();
+    const [dataRes, settingsRes] = await Promise.all([
+      fetch('/api/data?t=' + Date.now(), { cache: 'no-store' }),
+      fetch('/api/settings?t=' + Date.now(), { cache: 'no-store' }),
+    ]);
+    const data = await dataRes.json();
+    const settings = await settingsRes.json();
     inventory = data.inventory || [];
+    if (settings.outgoingDests?.length) {
+      outgoingDests = settings.outgoingDests;
+      if (!outgoingDests.includes(selectedDest)) selectedDest = outgoingDests[0];
+    }
     document.getElementById('last-sync').textContent = 'updated ' + new Date().toLocaleTimeString();
     if (appMode === 'stocktake') renderStocktake();
     else renderList();
@@ -298,9 +307,11 @@ async function adjustStocktake(id, delta) {
   if (!item || !stocktakeLocation) return;
   if (!item.storage) item.storage = {};
   const newVal = Math.max(0, (item.storage[stocktakeLocation]||0) + delta);
-  const diff = newVal - (item.storage[stocktakeLocation]||0);
   item.storage[stocktakeLocation] = newVal;
-  item.built = Math.max(0, (item.built||0) + diff);
+  // Derive built from total storage + total distributed so on-hand stays consistent
+  const totalOut = (item.distributions||[]).reduce((a,d) => a + (d.qty||0), 0);
+  const totalStorage = Object.values(item.storage).reduce((a,v) => a + (v||0), 0);
+  item.built = totalStorage + totalOut;
   const el = document.getElementById('st-' + id);
   if (el) el.textContent = newVal;
   await saveItem(item);
@@ -399,9 +410,7 @@ function renderDetail(item, onHand) {
       </div>
       <div id="outgoing-body-${item.id}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
         <div class="dest-btns">
-          <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
-          <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
-          <button class="dest-btn ${selectedDest==='website'?'active':''}" onclick="selectDest('website')"><span class="dest-icon">🌐</span>website</button>
+          ${outgoingDests.map(dest => `<button class="dest-btn ${selectedDest===dest?'active':''}" onclick="selectDest('${esc(dest)}')">${esc(dest)}</button>`).join('')}
         </div>
         <div class="log-row">
           <div class="log-qty-ctrl">

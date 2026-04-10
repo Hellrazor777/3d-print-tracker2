@@ -462,6 +462,18 @@ app.get('/mobile', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'src', 'mobile.html'));
 });
 
+// ─── Error handling ───────────────────────────────────────────────────────────
+
+// Drain oversized request bodies so the socket doesn't hang after a 413
+app.use((err, req, res, next) => {
+  if (err.status === 413 || err.type === 'entity.too.large') {
+    req.resume();
+    return res.status(413).json({ error: 'Request body too large (max 2 MB)' });
+  }
+  console.error('Unhandled server error:', err.message || err);
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+});
+
 // ─── Serve built frontend in production ───────────────────────────────────────
 
 const DIST_DIR = path.join(__dirname, '..', 'dist-web');

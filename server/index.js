@@ -1,3 +1,4 @@
+const http = require('http');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -440,7 +441,13 @@ app.get('/api/printers/camera/:serial', (req, res) => {
 
   let stopped = false;
 
-  const stop = printers.streamCamera(ip, code, res, (errMsg) => {
+  // H2D / H2S / X1C / X1E use RTSPS on port 322 (requires ffmpeg).
+  // P1S / P1P / A1 / A1 Mini use the proprietary binary protocol on port 6000.
+  const streamFn = printers.isRtspPrinter(serial)
+    ? printers.streamCameraRtsp
+    : printers.streamCamera;
+
+  const stop = streamFn(ip, code, res, (errMsg) => {
     if (!stopped) {
       stopped = true;
       try {
@@ -462,6 +469,18 @@ app.get('/mobile', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'src', 'mobile.html'));
 });
 
+// ─── Error handling ───────────────────────────────────────────────────────────
+
+// Drain oversized request bodies so the socket doesn't hang after a 413
+app.use((err, req, res, next) => {
+  if (err.status === 413 || err.type === 'entity.too.large') {
+    req.resume();
+    return res.status(413).json({ error: 'Request body too large (max 2 MB)' });
+  }
+  console.error('Unhandled server error:', err.message || err);
+  if (!res.headersSent) res.status(500).json({ error: 'Internal server error' });
+});
+
 // ─── Serve built frontend in production ───────────────────────────────────────
 
 const DIST_DIR = path.join(__dirname, '..', 'dist-web');
@@ -478,7 +497,10 @@ if (process.env.NODE_ENV === 'production') {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
-const server = app.listen(PORT, HOST, async () => {
+const server = http.createServer(app);
+server.keepAliveTimeout = 65000;
+
+server.listen(PORT, HOST, async () => {
   console.log(`API server running on http://${HOST}:${PORT}`);
 
   // Attach camera relay WebSocket server to the same HTTP server.
@@ -504,5 +526,3 @@ const server = app.listen(PORT, HOST, async () => {
     console.warn('Could not restore Bambu connection:', e.message);
   }
 });
-
-server.keepAliveTimeout = 65000;

@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 const isElectron = !!window.electronAPI;
 
@@ -170,9 +171,7 @@ export default function FilamentLibraryModal() {
   const selStyle = { fontSize: 12, padding: '4px 8px', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)', background: 'var(--bg2)', color: 'var(--text)', fontFamily: 'inherit', outline: 'none' };
 
   return (
-    <div id="filament-library-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal settings-modal" style={{ maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+    <ModalShell onClose={closeModal} className="settings-modal" style={{ maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
           <div className="settings-header">
             <span className="settings-title">Filament Library</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
@@ -260,8 +259,6 @@ export default function FilamentLibraryModal() {
           <div className="modal-footer" style={{ flexShrink: 0 }}>
             <button className="btn btn-primary" onClick={closeModal}>done</button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

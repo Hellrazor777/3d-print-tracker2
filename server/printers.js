@@ -7,6 +7,9 @@
 const tls     = require('tls');
 const https   = require('https');
 const dgram   = require('dgram');
+const fs      = require('fs');
+const path    = require('path');
+const { spawn, execSync } = require('child_process');
 const { EventEmitter } = require('events');
 
 // ─── Bambu LAN Discovery (SSDP/UDP port 2021) ────────────────────────────────
@@ -614,6 +617,132 @@ function streamCamera(ip, accessCode, res, onError) {
   };
 }
 
+// ─── RTSPS streaming for X1/H2D/H2S/P2S (port 322, H.264 via ffmpeg) ─────────
+//
+// These models don't speak the port-6000 binary JPEG protocol.
+// They expose an RTSPS stream at rtsps://bblp:<code>@<ip>:322/streaming/live/1
+// which carries H.264 video — a codec we can't decode in pure Node.
+// ffmpeg decodes and re-muxes to MJPEG frames which we pipe into the HTTP response.
+//
+// Prerequisite on the printer: Settings → Network → LAN Only Liveview → Enable
+
+// Models that use port 322 RTSPS instead of port 6000 binary
+const RTSP_MODEL_RE = /\b(X1C?|X1E|H2D|H2S|P2S)\b/i;
+
+function getDeviceModel(serial) {
+  const dev = (bambuDevices || []).find(d => d.dev_id === serial);
+  if (dev?.dev_product_name) return dev.dev_product_name;
+  return discoveredPrinters[serial]?.model || '';
+}
+
+function isRtspPrinter(serial) {
+  return RTSP_MODEL_RE.test(getDeviceModel(serial));
+}
+
+// Locate the ffmpeg binary — checks PATH first, then winget install directory.
+let _ffmpegBin = null;
+function getFfmpeg() {
+  if (_ffmpegBin) return _ffmpegBin;
+  try {
+    const cmd = process.platform === 'win32' ? 'where ffmpeg' : 'which ffmpeg';
+    const found = execSync(cmd, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .trim().split(/\r?\n/)[0].trim();
+    if (found) { _ffmpegBin = found; return found; }
+  } catch {}
+  if (process.platform === 'win32') {
+    const base = path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'WinGet', 'Packages');
+    try {
+      for (const pkg of fs.readdirSync(base).filter(d => d.startsWith('Gyan.FFmpeg'))) {
+        for (const build of fs.readdirSync(path.join(base, pkg)).filter(d => d.includes('ffmpeg'))) {
+          const exe = path.join(base, pkg, build, 'bin', 'ffmpeg.exe');
+          if (fs.existsSync(exe)) { _ffmpegBin = exe; return exe; }
+        }
+      }
+    } catch {}
+  }
+  _ffmpegBin = 'ffmpeg';
+  return 'ffmpeg';
+}
+
+function streamCameraRtsp(ip, accessCode, res, onError) {
+  const ffmpegBin = getFfmpeg();
+  const rtspUrl = `rtsps://bblp:${accessCode}@${ip}:322/streaming/live/1`;
+
+  const args = [
+    '-loglevel', 'warning',
+    '-rtsp_transport', 'tcp',
+    '-i', rtspUrl,
+    '-f', 'mjpeg',
+    '-q:v', '3',
+    '-r', '10',
+    'pipe:1',
+  ];
+
+  let active = true;
+  let proc;
+  try {
+    proc = spawn(ffmpegBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  } catch (e) {
+    onError(`ffmpeg not found: ${e.message}`);
+    return () => {};
+  }
+
+  const SOI = Buffer.from([0xFF, 0xD8]);
+  const EOI = Buffer.from([0xFF, 0xD9]);
+  let buf = Buffer.alloc(0);
+
+  proc.stdout.on('data', (chunk) => {
+    if (!active) return;
+    buf = Buffer.concat([buf, chunk]);
+
+    // Extract complete JPEG frames (SOI … EOI)
+    while (buf.length > 4) {
+      const start = buf.indexOf(SOI);
+      if (start === -1) { buf = Buffer.alloc(0); break; }
+      const end = buf.indexOf(EOI, start + 2);
+      if (end === -1) { if (start > 0) buf = buf.slice(start); break; }
+      const frame = buf.slice(start, end + 2);
+      buf = buf.slice(end + 2);
+      try {
+        res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+        res.write(frame);
+        res.write('\r\n');
+      } catch {
+        active = false;
+        try { proc.kill('SIGKILL'); } catch {}
+        return;
+      }
+    }
+  });
+
+  let stderrBuf = '';
+  proc.stderr.on('data', (d) => {
+    stderrBuf += d.toString();
+    if (stderrBuf.length > 4000) stderrBuf = stderrBuf.slice(-2000);
+  });
+
+  proc.on('exit', (code) => {
+    if (active) {
+      const hint = stderrBuf.includes('Connection refused') ? 'connection refused — is the printer IP correct? Is LAN Only Liveview enabled on the printer (Settings → Network)?'
+        : stderrBuf.includes('401') || stderrBuf.includes('Unauthorized') ? 'auth failed — check the access code'
+        : stderrBuf.includes('No such file') || stderrBuf.includes('not found') ? 'ffmpeg not found — check ffmpeg is installed'
+        : `stream ended (ffmpeg exit ${code})`;
+      onError(hint);
+    }
+    active = false;
+  });
+
+  proc.on('error', (err) => {
+    if (active) onError(`ffmpeg error: ${err.message}`);
+    active = false;
+  });
+
+  return () => {
+    active = false;
+    try { proc.kill('SIGKILL'); } catch {}
+  };
+}
+
 // Return the best-known local IP for a serial: UDP discovery first, then device list
 function getDiscoveredIp(serial) {
   // Prefer UDP-discovered IP (proved it's on the LAN and recently seen)
@@ -650,6 +779,8 @@ module.exports = {
   prepareAuth,
   getState,
   streamCamera,
+  streamCameraRtsp,
+  isRtspPrinter,
   bambuGetCameraCreds,
   getDiscoveredIp,
   get discoveredPrinters() { return discoveredPrinters; },

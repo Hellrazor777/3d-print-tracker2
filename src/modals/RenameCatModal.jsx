@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function RenameCatModal() {
   const { modal, closeModal, renameCategory, renameStorageLocation, renameOutgoingDest } = useApp();
@@ -16,20 +17,16 @@ export default function RenameCatModal() {
   };
 
   return (
-    <div id="rename-cat-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 320 }}>
-          <h3>{title}</h3>
-          <div className="field">
-            <label>New name</label>
-            <input value={value} onChange={e => setValue(e.target.value)} placeholder="Name" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }} />
-          </div>
-          <div className="modal-footer">
-            <button className="btn" onClick={closeModal}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleConfirm}>Rename</button>
-          </div>
-        </div>
+    <ModalShell onClose={closeModal} width={320}>
+      <h3>{title}</h3>
+      <div className="field">
+        <label>New name</label>
+        <input value={value} onChange={e => setValue(e.target.value)} placeholder="Name" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }} />
       </div>
-    </div>
+      <div className="modal-footer">
+        <button className="btn" onClick={closeModal}>Cancel</button>
+        <button className="btn btn-primary" onClick={handleConfirm}>Rename</button>
+      </div>
+    </ModalShell>
   );
 }

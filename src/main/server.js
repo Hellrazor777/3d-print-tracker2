@@ -80,7 +80,7 @@ function validateInventoryUpdate(raw) {
   return { ok: true, item };
 }
 
-function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
+function startLocalServer(PORT, DATA_PATH, SETTINGS_PATH, mainWin, onListening) {
   const mobileHtmlPath = path.join(__dirname, '..', 'mobile.html');
   const localServer = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -89,11 +89,20 @@ function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-    if (req.method === 'GET' && url.pathname === '/data') {
+    if (req.method === 'GET' && (url.pathname === '/data' || url.pathname === '/api/data')) {
       try {
         const data = fs.existsSync(DATA_PATH) ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf8')) : {};
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' });
         res.end(JSON.stringify(data));
+      } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/api/settings') {
+      try {
+        const settings = SETTINGS_PATH && fs.existsSync(SETTINGS_PATH) ? JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8')) : {};
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(settings));
       } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
       return;
     }

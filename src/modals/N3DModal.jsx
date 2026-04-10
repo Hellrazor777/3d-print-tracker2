@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 import { n3dRequest } from '../lib/n3dClient';
 
 function esc(s) { return String(s || ''); }
@@ -210,9 +211,7 @@ export default function N3DModal() {
   };
 
   return (
-    <div id="n3d-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 780, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
+    <ModalShell onClose={closeModal} style={{ width: 780, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
           <div className="settings-header">
             <span className="settings-title">N3D Melbourne</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
@@ -350,8 +349,6 @@ export default function N3DModal() {
               </div>
             </>
           )}
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

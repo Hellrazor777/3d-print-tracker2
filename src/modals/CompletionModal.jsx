@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function CompletionModal() {
   const { modal, closeModal, confirmCompletion } = useApp();
@@ -7,9 +8,7 @@ export default function CompletionModal() {
   const productName = modal?.productName || '';
 
   return (
-    <div id="completion-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 340 }}>
+    <ModalShell onClose={closeModal} width={340}>
           <h3>all parts printed!</h3>
           <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: '1rem', lineHeight: 1.5 }}>How many completed builds are you adding to inventory? The product will be archived after this.</p>
           <div className="field">
@@ -24,8 +23,6 @@ export default function CompletionModal() {
             <button className="btn" onClick={closeModal}>cancel</button>
             <button className="btn btn-success" onClick={() => confirmCompletion(productName, qty)}>add to inventory &amp; archive</button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

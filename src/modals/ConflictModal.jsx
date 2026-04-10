@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function ConflictModal() {
   const { modal, closeModal, getItems, importData } = useApp();
@@ -80,9 +81,7 @@ export default function ConflictModal() {
   if (!currentProduct) return null;
 
   return (
-    <div id="conflict-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 420 }}>
+    <ModalShell onClose={closeModal} width={420}>
           <h3>Import Conflict</h3>
 
           <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>
@@ -128,8 +127,6 @@ export default function ConflictModal() {
               {queue.length > 1 ? `Next conflict →` : 'Apply import'}
             </button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

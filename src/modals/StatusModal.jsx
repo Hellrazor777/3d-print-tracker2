@@ -1,4 +1,5 @@
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function StatusModal() {
   const { modal, closeModal, parts, setPartStatus, setSubPartStatus } = useApp();
@@ -21,9 +22,7 @@ export default function StatusModal() {
   };
 
   return (
-    <div id="status-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 300 }}>
+    <ModalShell onClose={closeModal} width={300}>
           <h3>change status — {current.name}</h3>
           {current.status === 'done' && !isSubPart && (
             <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: '1rem', lineHeight: 1.5 }}>This part is marked done. Reset it to:</p>
@@ -36,8 +35,6 @@ export default function StatusModal() {
             </button>
           ))}
           <button className="btn" style={{ width: '100%', marginTop: 4, padding: 8, color: 'var(--text2)' }} onClick={closeModal}>cancel</button>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

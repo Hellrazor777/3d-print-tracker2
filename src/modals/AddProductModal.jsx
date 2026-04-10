@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp, localFileUrl } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 export default function AddProductModal() {
   const { closeModal, saveAddProduct, getCategoryOrder, isElectron, products, appSettings } = useApp();
@@ -40,9 +41,7 @@ export default function AddProductModal() {
   };
 
   return (
-    <div id="add-product-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 360, position: 'relative' }}>
+    <ModalShell onClose={closeModal} width={360} style={{ position: 'relative' }}>
           <h3>Add Product</h3>
           <div className="field"><label>product name *</label><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Pikachu V3" autoFocus /></div>
           <div className="field">
@@ -90,8 +89,6 @@ export default function AddProductModal() {
               </div>
             </div>
           )}
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

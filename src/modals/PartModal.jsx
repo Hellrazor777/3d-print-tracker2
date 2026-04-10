@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 // ── Filament Library Picker ──────────────────────────────────────────────────
 function FilamentPicker({ filaments, onSelect, onClose }) {
@@ -160,9 +161,7 @@ export default function PartModal() {
   };
 
   return (
-    <div id="modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal">
+    <ModalShell onClose={closeModal}>
           <h3>{editId ? 'edit part' : 'add part'}</h3>
           <div className="section-label">part info</div>
           <div className="field"><label>part name *</label><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. motor mount bracket" autoFocus /></div>
@@ -199,8 +198,6 @@ export default function PartModal() {
             <button className="btn" onClick={closeModal}>cancel</button>
             <button className="btn btn-primary" onClick={handleSave}>save</button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

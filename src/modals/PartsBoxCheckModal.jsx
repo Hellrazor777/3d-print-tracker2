@@ -1,4 +1,5 @@
 import { useApp } from '../context/AppContext';
+import ModalShell from '../components/ModalShell';
 
 function esc(s) { return String(s || ''); }
 
@@ -19,9 +20,7 @@ export default function PartsBoxCheckModal() {
   };
 
   return (
-    <div id="modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ maxWidth: 340, textAlign: 'center' }}>
+    <ModalShell onClose={closeModal} style={{ maxWidth: 340, textAlign: 'center' }}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
           <h3 style={{ marginBottom: 8 }}>Check parts box {boxLabel}</h3>
           <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.5 }}>
@@ -33,8 +32,6 @@ export default function PartsBoxCheckModal() {
               yes — {action === 'restart' ? 'restart' : 'restore'}
             </button>
           </div>
-        </div>
-      </div>
-    </div>
+    </ModalShell>
   );
 }

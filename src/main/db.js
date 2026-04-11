@@ -133,4 +133,20 @@ async function isUsingCloud() {
   return usePostgres;
 }
 
-module.exports = { loadData, saveData, loadSettings, saveSettings, dbReadyPromise, isUsingCloud };
+// Like saveData but throws if the Supabase write fails — used by push-local-to-cloud
+// so the IPC handler can return a meaningful error to the UI instead of silent failure.
+async function pushDataToCloud(data, localPath, fs) {
+  await dbReadyPromise;
+  if (!usePostgres) throw new Error('Not connected to Supabase');
+  // Always keep local file up to date as a backup
+  writeLocalData(data, localPath, fs);
+  await pgPool.query(
+    `INSERT INTO app_data (id, data, updated_at)
+     VALUES ('default', $1::jsonb, NOW())
+     ON CONFLICT (id) DO UPDATE
+       SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
+    [JSON.stringify(data)]
+  );
+}
+
+module.exports = { loadData, saveData, loadSettings, saveSettings, dbReadyPromise, isUsingCloud, pushDataToCloud };

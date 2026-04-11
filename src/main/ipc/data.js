@@ -34,10 +34,10 @@ module.exports = function registerDataHandlers(ipcMain, DATA_PATH, SETTINGS_PATH
   ipcMain.handle('push-local-to-cloud', async () => {
     try {
       const isCloud = await db.isUsingCloud();
-      if (!isCloud) return { ok: false, error: 'Not in cloud mode' };
+      if (!isCloud) return { ok: false, error: 'Not connected to Supabase — check DATABASE_URL env var' };
       if (!fs.existsSync(DATA_PATH)) return { ok: false, error: 'No local data.json found' };
       const data = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-      await db.saveData(data, DATA_PATH, fs);
+      await db.pushDataToCloud(data, DATA_PATH, fs);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.message };

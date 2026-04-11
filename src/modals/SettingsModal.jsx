@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -27,11 +27,11 @@ export default function SettingsModal() {
 
   const [isCloud, setIsCloud] = useState(false);
   const [pushStatus, setPushStatus] = useState('');
-  useState(() => {
+  useEffect(() => {
     if (window.electronAPI?.isUsingCloud) {
       window.electronAPI.isUsingCloud().then(v => setIsCloud(!!v));
     }
-  });
+  }, []);
 
   const [pushing, setPushing] = useState(false);
   const handlePushToCloud = async () => {

@@ -201,6 +201,7 @@ function ProductCard({ item }) {
     uploadProductImage, openExternalUrl, isElectron, toggleProduct, isReady,
   } = useApp();
   const isOpen = openProducts.has(item);
+  const ready = isReady(item); // boolean — call the function with item
   const [cardToast, setCardToast] = React.useState(null); // { message, type: 'success'|'error'|'warning' }
   React.useEffect(() => {
     if (!cardToast) return;
@@ -239,7 +240,7 @@ function ProductCard({ item }) {
   }, [imgOpen]);
 
   return (
-    <div id={`product-card-${item.replace(/[^a-zA-Z0-9]/g, '_')}`} className={`product-card${isReady ? ' ready' : ''}`}>
+    <div id={`product-card-${item.replace(/[^a-zA-Z0-9]/g, '_')}`} className={`product-card${ready ? ' ready' : ''}`}>
       {imgOpen && localFileUrl(iconPath) && createPortal(
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}
@@ -295,7 +296,7 @@ function ProductCard({ item }) {
 
         {ps.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--text2)', fontStyle: 'italic' }}>no parts yet — expand to add one</span>
-        ) : isReady ? (
+        ) : ready ? (
           <span className="ready-badge" style={{ cursor: 'pointer' }} title="click to mark as done and add to inventory"
             onClick={e => { e.stopPropagation(); openModal('completion', { productName: item }); }}>
             <span className="ready-dot"></span>ready to build — click when done
@@ -311,7 +312,7 @@ function ProductCard({ item }) {
             </div>
           </>
         )}
-        <div className="progress-bar-wrap"><div className={`progress-bar-fill ${isReady ? 'done' : 'going'}`} style={{ width: pct + '%' }}></div></div>
+        <div className="progress-bar-wrap"><div className={`progress-bar-fill ${ready ? 'done' : 'going'}`} style={{ width: pct + '%' }}></div></div>
         <span className={`chevron${isOpen ? ' open' : ''}`}>▶</span>
       </div>
 
@@ -321,8 +322,8 @@ function ProductCard({ item }) {
           {products[item]?.source && <span className="cat-tag">{esc(products[item].source)}</span>}
           {products[item]?.designer && <span style={{ fontSize: 12, color: 'var(--text2)' }}>by {esc(products[item].designer)}</span>}
           {products[item]?.description && <span style={{ fontSize: 12, color: 'var(--text2)', fontStyle: 'italic' }}>{esc(products[item].description)}</span>}
-          {!isReady && isOpen && <span style={{ fontSize: 11, color: 'var(--text2)' }}>{ps.filter(p => p.status !== 'done').length} part{ps.filter(p => p.status !== 'done').length !== 1 ? 's' : ''} left</span>}
-          {isReady && <span style={{ fontSize: 11, color: 'var(--green-dark)' }}>all {tp} pieces printed</span>}
+          {!ready && isOpen && <span style={{ fontSize: 11, color: 'var(--text2)' }}>{ps.filter(p => p.status !== 'done').length} part{ps.filter(p => p.status !== 'done').length !== 1 ? 's' : ''} left</span>}
+          {ready && <span style={{ fontSize: 11, color: 'var(--green-dark)' }}>all {tp} pieces printed</span>}
         </div>
       )}
 

@@ -27,11 +27,16 @@ async function loadData() {
 }
 async function saveData(data) {
   if (isElectron) return await window.electronAPI.saveData(data);
-  await fetch(`${API_BASE}/api/data`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  }).catch(() => {});
+  try {
+    const r = await fetch(`${API_BASE}/api/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!r.ok) console.error('[saveData] API error:', r.status, await r.text().catch(() => ''));
+  } catch (e) {
+    console.error('[saveData] Network error:', e.message);
+  }
 }
 async function loadSettings() {
   if (isElectron) return await window.electronAPI.loadSettings();

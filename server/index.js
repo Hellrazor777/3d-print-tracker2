@@ -10,7 +10,7 @@ const app = express();
 const PORT = process.env.PORT || process.env.API_PORT || (process.env.NODE_ENV === 'production' ? 5000 : 8080);
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' }));
 
 // ─── SSE clients ──────────────────────────────────────────────────────────────
 

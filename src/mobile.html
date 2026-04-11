@@ -33,7 +33,7 @@
   .header h1 { font-size: 22px; font-weight: 600; flex: 1; }
   .header-sub { font-size: 14px; color: var(--text2); }
 
-  .search-bar { padding: 16px 20px; background: var(--bg); border-bottom: 0.5px solid var(--border); }
+  .search-bar { padding: 16px 20px; background: var(--bg); border-bottom: 0.5px solid var(--border); position: sticky; top: 73px; z-index: 9; }
   .search-bar input { width: 100%; font-size: 18px; background: var(--bg2); border: 0.5px solid var(--border2); border-radius: var(--radius); padding: 14px 18px; color: var(--text); font-family: inherit; outline: none; }
 
   .list { padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; padding-bottom: 100px; }
@@ -171,7 +171,19 @@
 </div>
 
 <script>
+// ── HTML escaping helpers ─────────────────────────────────────────────────────
+// esc()  — safe for HTML text content and attribute values
+// js()   — safe for values inside JS string literals within HTML attributes
+function esc(v) {
+  return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function js(v) { return JSON.stringify(String(v ?? '')); }
+
 let inventory = [];
+let parts = [];
+let products = {};
+let pendingInventory = []; // synthetic entries for queue/planning products — never saved to server
 let expandedId = null;
 let logQty = 1;
 let selectedDest = 'store';
@@ -184,15 +196,17 @@ let builtDelta = 0;
 
 async function reload() {
   try {
-    const res = await fetch('/api/data?t=' + Date.now(), { cache: 'no-store' });
+    const res = await fetch('/data?t=' + Date.now(), { cache: 'no-store' });
     const data = await res.json();
     inventory = data.inventory || [];
+    parts     = data.parts     || [];
+    products  = data.products  || {};
     document.getElementById('last-sync').textContent = 'updated ' + new Date().toLocaleTimeString();
     if (appMode === 'stocktake') renderStocktake();
     else renderList();
   } catch(e) {
-    document.getElementById('last-sync').textContent = 'could not connect';
-    document.getElementById('list').innerHTML = '<div class="empty">Could not reach the cloud — check your connection.</div>';
+    document.getElementById('last-sync').textContent = 'could not connect to app';
+    document.getElementById('list').innerHTML = '<div class="empty">Make sure the 3D Print Tracker app is open on your PC.</div>';
   }
 }
 
@@ -249,12 +263,33 @@ function renderStocktake() {
   }
 
   const stq = (document.getElementById('stocktake-search')?.value || '').toLowerCase();
+
+  // Rebuild pending inventory entries fresh — never mutate the real inventory array
+  const invNames = new Set(inventory.map(i => i.name));
+  const pendingNames = Object.keys(products)
+    .filter(name => {
+      if (products[name]?.archived) return false;
+      const ps = parts.filter(p => p.item === name);
+      return ps.length > 0 && ps.every(p => p.status === 'planning' || p.status === 'queue');
+    })
+    .filter(name => !invNames.has(name))
+    .sort((a, b) => a.localeCompare(b));
+  // Sync pendingInventory: keep existing entries (preserve any counts the user entered), add new, remove stale
+  pendingInventory = pendingNames.map(name => {
+    const existing = pendingInventory.find(p => p.name === name);
+    return existing || { id: 'pending_' + name.replace(/[^a-zA-Z0-9]/g,'_'), name, built: 0, storage: {}, distributions: [], source: 'tracker' };
+  });
+
+  // Inventory items (already built)
   const locFiltered = stocktakeLocation
     ? inventory.filter(i => i.storage && (i.storage[stocktakeLocation]||0) > 0)
     : inventory;
-  const items = stq ? locFiltered.filter(i => i.name.toLowerCase().includes(stq)) : locFiltered;
+  const invItems = stq ? locFiltered.filter(i => i.name.toLowerCase().includes(stq)) : locFiltered;
 
-  if (!items.length) {
+  // Pending items matching search
+  const pendingItems = stq ? pendingInventory.filter(i => i.name.toLowerCase().includes(stq)) : pendingInventory;
+
+  if (!invItems.length && !pendingItems.length) {
     const empty = document.createElement('div');
     empty.className = 'empty';
     empty.textContent = stocktakeLocation ? 'no items in ' + stocktakeLocation : 'no inventory yet';
@@ -262,45 +297,58 @@ function renderStocktake() {
     return;
   }
 
-  items.forEach(item => {
-    const qty = stocktakeLocation ? (item.storage?.[stocktakeLocation]||0) : calcOnHand(item);
+  function makeCard(name, id, qty) {
     const card = document.createElement('div');
     card.className = 'inv-card';
     card.style.padding = '18px 20px';
     const nameEl = document.createElement('div');
     nameEl.className = 'inv-name';
     nameEl.style.marginBottom = '14px';
-    nameEl.textContent = item.name;
+    nameEl.textContent = name;
     const ctrl = document.createElement('div');
     ctrl.style.cssText = 'display:flex;align-items:center;gap:0';
     const minusBtn = document.createElement('button');
     minusBtn.className = 'count-btn';
     minusBtn.style.borderRadius = 'var(--radius) 0 0 var(--radius)';
     minusBtn.textContent = '−';
-    minusBtn.onclick = (function(id){ return function(){ adjustStocktake(id, -1); }; })(item.id);
+    minusBtn.onclick = (function(i){ return function(){ adjustStocktake(i, -1); }; })(id);
     const valEl = document.createElement('div');
     valEl.className = 'count-val';
-    valEl.id = 'st-' + item.id;
+    valEl.id = 'st-' + id;
     valEl.textContent = qty;
     const plusBtn = document.createElement('button');
     plusBtn.className = 'count-btn';
     plusBtn.style.borderRadius = '0 var(--radius) var(--radius) 0';
     plusBtn.textContent = '+';
-    plusBtn.onclick = (function(id){ return function(){ adjustStocktake(id, 1); }; })(item.id);
+    plusBtn.onclick = (function(i){ return function(){ adjustStocktake(i, 1); }; })(id);
     ctrl.appendChild(minusBtn); ctrl.appendChild(valEl); ctrl.appendChild(plusBtn);
     card.appendChild(nameEl); card.appendChild(ctrl);
-    list.appendChild(card);
+    return card;
+  }
+
+  invItems.forEach(item => {
+    const qty = stocktakeLocation ? (item.storage?.[stocktakeLocation]||0) : calcOnHand(item);
+    list.appendChild(makeCard(item.name, item.id, qty));
   });
+
+  if (pendingItems.length) {
+    const hdr = document.createElement('div');
+    hdr.style.cssText = 'font-size:13px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em;margin:20px 0 10px';
+    hdr.textContent = 'Queued / Planned';
+    list.appendChild(hdr);
+    pendingItems.forEach(item => {
+      const qty = stocktakeLocation ? (item.storage?.[stocktakeLocation]||0) : calcOnHand(item);
+      list.appendChild(makeCard(item.name, item.id, qty));
+    });
+  }
 }
 
 async function adjustStocktake(id, delta) {
-  const item = inventory.find(i => i.id === id);
+  const item = inventory.find(i => i.id === id) || pendingInventory.find(i => i.id === id);
   if (!item || !stocktakeLocation) return;
   if (!item.storage) item.storage = {};
   const newVal = Math.max(0, (item.storage[stocktakeLocation]||0) + delta);
-  const diff = newVal - (item.storage[stocktakeLocation]||0);
   item.storage[stocktakeLocation] = newVal;
-  item.built = Math.max(0, (item.built||0) + diff);
   const el = document.getElementById('st-' + id);
   if (el) el.textContent = newVal;
   await saveItem(item);
@@ -318,10 +366,10 @@ function renderList() {
     const card = document.createElement('div');
     card.className = 'inv-card';
     card.innerHTML = `
-      <div class="inv-card-header" onclick="toggleCard('${item.id}')">
+      <div class="inv-card-header" onclick="toggleCard(${js(item.id)})">
         <div style="flex:1">
-          <div class="inv-name">${item.name}</div>
-          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+item.location+'</div>' : ''}
+          <div class="inv-name">${esc(item.name)}</div>
+          ${item.location ? '<div style="font-size:12px;color:var(--text2);margin-top:2px">'+esc(item.location)+'</div>' : ''}
         </div>
         <div style="text-align:right">
           <div class="inv-onhand ${onHand===0?'zero':''}">${onHand}</div>
@@ -348,10 +396,10 @@ function renderDetail(item, onHand) {
 
   const histRows = (item.distributions||[]).slice().reverse().map((d,i) => `
     <div class="dist-item">
-      <span class="dist-item-dest dest-${d.dest}">${d.dest}</span>
-      <span class="dist-item-note">${d.note||''}</span>
-      <span class="dist-item-qty">-${d.qty}</span>
-      <button class="dist-del" onclick="removeDist('${item.id}',${(item.distributions.length-1-i)})">&#x2715;</button>
+      <span class="dist-item-dest dest-${esc(d.dest)}">${esc(d.dest)}</span>
+      <span class="dist-item-note">${esc(d.note||'')}</span>
+      <span class="dist-item-qty">-${Number(d.qty)||0}</span>
+      <button class="dist-del" onclick="removeDist(${js(item.id)},${(item.distributions.length-1-i)})">&#x2715;</button>
     </div>`).join('');
 
   return `
@@ -359,10 +407,10 @@ function renderDetail(item, onHand) {
       <div class="summary-pill"><div class="val">${item.built||0}</div><div class="lbl">built</div></div>
       <div class="summary-pill"><div class="val">${totalOut}</div><div class="lbl">out</div></div>
       <div class="summary-pill"><div class="val" style="color:var(--green)">${onHand}</div><div class="lbl">on hand</div></div>
-      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${v||0}</div><div class="lbl">${k.toLowerCase()}</div></div>`).join('')}
+      ${Object.entries(item.storage||{}).map(([k,v])=>`<div class="summary-pill"><div class="val">${Number(v)||0}</div><div class="lbl">${esc(k.toLowerCase())}</div></div>`).join('')}
     </div>
 
-    <div class="count-row" onclick="openBuiltPopup('${item.id}')" style="cursor:pointer">
+    <div class="count-row" onclick="openBuiltPopup(${js(item.id)})" style="cursor:pointer">
       <div>
         <div style="font-size:14px;font-weight:500">built count</div>
         <div class="count-label">tap to update</div>
@@ -378,22 +426,22 @@ function renderDetail(item, onHand) {
     ${Object.keys(item.storage||{}).map(loc => `
     <div class="count-row" style="margin-bottom:12px">
       <div>
-        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${loc}</div>
+        <div style="font-size:16px;font-weight:500;text-transform:capitalize">${esc(loc)}</div>
       </div>
       <div class="count-ctrl">
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',-1)">−</button>
-        <div class="count-val editable-val" id="mob-${loc}-${item.id}" onclick="editNum(this, ${(item.storage||{})[loc]||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); item.storage['${loc}']=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!=='${loc}'); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage['${loc}']); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+'${item.id}'); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${(item.storage||{})[loc]||0}</div>
-        <button class="count-btn" onclick="adjustLocation('${item.id}','${loc}',1)">+</button>
+        <button class="count-btn" onclick="adjustLocation(${js(item.id)},${js(loc)},-1)">−</button>
+        <div class="count-val editable-val" id="mob-${esc(loc)}-${esc(item.id)}" onclick="editNum(this, ${Number((item.storage||{})[loc])||0}, async (v)=>{ if(!item.storage)item.storage={}; const onHand=calcOnHand(item); const locs=Object.keys(item.storage); const loc=${js(loc)}; item.storage[loc]=Math.max(0,Math.min(onHand,v)); const otherLocs=locs.filter(l=>l!==loc); if(otherLocs.length===1){item.storage[otherLocs[0]]=Math.max(0,onHand-item.storage[loc]); const otherEl=document.getElementById('mob-'+otherLocs[0]+'-'+${js(item.id)}); if(otherEl)otherEl.textContent=item.storage[otherLocs[0]];} await saveItem(item); })" title="tap to edit">${Number((item.storage||{})[loc])||0}</div>
+        <button class="count-btn" onclick="adjustLocation(${js(item.id)},${js(loc)},1)">+</button>
       </div>
     </div>`).join('')}
     <div style="border-top:0.5px solid var(--border);margin:4px 0 16px"></div>
 
     <div class="dist-section">
-      <div class="dist-title" onclick="toggleOutgoing('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+      <div class="dist-title" onclick="toggleOutgoing(${js(item.id)})" style="display:flex;align-items:center;cursor:pointer;user-select:none">
         <span style="flex:1">log outgoing</span>
         <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${outgoingCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
       </div>
-      <div id="outgoing-body-${item.id}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
+      <div id="outgoing-body-${esc(item.id)}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
         <div class="dest-btns">
           <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
           <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
@@ -405,19 +453,19 @@ function renderDetail(item, onHand) {
             <div class="log-qty-val editable-val" onclick="editNum(this, logQty, (v)=>{ logQty=Math.max(1,v); document.querySelectorAll('.log-qty-val').forEach(el=>el.textContent=logQty); document.querySelectorAll('.log-submit').forEach(b=>b.textContent='log '+logQty+' to '+selectedDest); })" title="tap to edit">${logQty}</div>
             <button class="log-qty-btn" onclick="adjustLogQty(1)">+</button>
           </div>
-          <input class="log-note" id="log-note-${item.id}" placeholder="note (optional)"/>
+          <input class="log-note" id="log-note-${esc(item.id)}" placeholder="note (optional)"/>
         </div>
-        <button class="log-submit" onclick="logDistribution('${item.id}')">log ${logQty} to ${selectedDest}</button>
+        <button class="log-submit" onclick="logDistribution(${js(item.id)})">log ${logQty} to ${esc(selectedDest)}</button>
       </div>
     </div>
 
     ${histRows ? `
     <div class="dist-history">
-      <div class="dist-hist-title" onclick="toggleHistory('${item.id}')" style="display:flex;align-items:center;cursor:pointer;user-select:none">
+      <div class="dist-hist-title" onclick="toggleHistory(${js(item.id)})" style="display:flex;align-items:center;cursor:pointer;user-select:none">
         <span style="flex:1">history</span>
         <span style="font-size:12px;transition:transform .2s;display:inline-block;transform:${historyCollapsed.has(item.id)?'rotate(0deg)':'rotate(90deg)'}">▶</span>
       </div>
-      <div id="hist-body-${item.id}" style="display:${historyCollapsed.has(item.id)?'none':'block'}">${histRows}</div>
+      <div id="hist-body-${esc(item.id)}" style="display:${historyCollapsed.has(item.id)?'none':'block'}">${histRows}</div>
     </div>` : ''}`;
 }
 
@@ -586,7 +634,7 @@ async function removeDist(id, index) {
 
 async function saveItem(item) {
   try {
-    await fetch('/api/inventory', {
+    await fetch('/inventory', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(item)

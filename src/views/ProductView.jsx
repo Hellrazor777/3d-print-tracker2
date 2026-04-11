@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp, localFileUrl } from '../context/AppContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 function esc(s) { return String(s || ''); }
 
@@ -199,18 +200,22 @@ function ProductCard({ item }) {
     uploadProductImage, openExternalUrl, isElectron, toggleProduct, isReady,
   } = useApp();
   const isOpen = openProducts.has(item);
-  const [cardToast, setCardToast] = React.useState('');
+  const [cardToast, setCardToast] = React.useState(null); // { message, type: 'success'|'error'|'warning' }
   React.useEffect(() => {
     if (!cardToast) return;
-    const t = setTimeout(() => setCardToast(''), 3000);
+    const t = setTimeout(() => setCardToast(null), 3000);
     return () => clearTimeout(t);
   }, [cardToast]);
+  const [uploading3mf, setUploading3mf] = React.useState(false);
+  const [confirmState, setConfirmState] = React.useState(null);
   const handle3mfUpload = async (i) => {
-    if (!appSettings.threeMfFolder) { setCardToast('⚠ Set a 3MF root folder in Settings first'); return; }
+    if (!appSettings.threeMfFolder) { setCardToast({ message: 'Set a 3MF root folder in Settings first', type: 'warning' }); return; }
+    setUploading3mf(true);
     try {
       const count = await uploadProduct3mf(i);
-      if (count > 0) setCardToast(`✓ ${count} file${count !== 1 ? 's' : ''} added to ${i}`);
-    } catch { setCardToast('⚠ Upload failed — check the 3MF folder in Settings'); }
+      if (count > 0) setCardToast({ message: `${count} file${count !== 1 ? 's' : ''} added to ${i}`, type: 'success' });
+    } catch { setCardToast({ message: 'Upload failed — check the 3MF folder in Settings', type: 'error' }); }
+    finally { setUploading3mf(false); }
   };
   const ps = parts.filter(p => p.item === item);
   const tp = ps.reduce((a, p) => a + p.qty, 0), dp = ps.reduce((a, p) => a + p.printed, 0);
@@ -260,10 +265,10 @@ function ProductCard({ item }) {
           )}
           <span className="product-title">{esc(item)}</span>
           <button className="rename-btn" onClick={e => { e.stopPropagation(); openModal('manage-product', { item }); }}>Manage</button>
-          <button className="rename-btn" style={{ color: 'var(--amber-text)' }} title="move to archive" onClick={e => { e.stopPropagation(); if (confirm(`Archive "${item}"?`)) archiveProduct(item); }}>↓ Archive</button>
+          <button className="rename-btn" style={{ color: 'var(--amber-text)' }} title="move to archive" onClick={e => { e.stopPropagation(); setConfirmState({ message: `Archive "${item}"?`, confirmLabel: 'archive', onConfirm: () => { archiveProduct(item); setConfirmState(null); } }); }}>↓ Archive</button>
           {isElectron && <button className="rename-btn" title="open product folder" style={{ fontSize: 12 }} onClick={e => { e.stopPropagation(); openProductFolder(item); }}>🗂 Folder</button>}
           {isElectron && <button className="rename-btn" title="open in slicer" style={{ fontSize: 12 }} onClick={e => { e.stopPropagation(); openProductInSlicer(item); }}>▶ Slicer</button>}
-          {isElectron && <button className="rename-btn" title="upload 3MF file" style={{ fontSize: 12 }} onClick={e => { e.stopPropagation(); handle3mfUpload(item); }}>↑ 3MF</button>}
+          {isElectron && <button className="rename-btn" title="upload 3MF file" style={{ fontSize: 12 }} disabled={uploading3mf} onClick={e => { e.stopPropagation(); handle3mfUpload(item); }}>{uploading3mf ? '…' : '↑ 3MF'}</button>}
           {appSettings.invPopup !== false && (
             <button className="rename-btn" title="add to inventory" style={{ fontSize: 12, color: 'var(--green-dark)' }} onClick={e => { e.stopPropagation(); openModal('quick-add', { productName: item }); }}>+ Inv</button>
           )}
@@ -321,10 +326,11 @@ function ProductCard({ item }) {
 
       {isOpen && <PartsTable item={item} />}
       {cardToast && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 8, padding: '10px 20px', fontSize: 13, color: 'var(--text)', boxShadow: '0 4px 16px rgba(0,0,0,.18)', zIndex: 9999, pointerEvents: 'none', whiteSpace: 'nowrap' }}>
-          {cardToast}
+        <div className={`toast toast-${cardToast.type}`} style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', borderRadius: 8, padding: '10px 20px', fontSize: 13, boxShadow: '0 4px 16px rgba(0,0,0,.18)', zIndex: 9999, pointerEvents: 'none', whiteSpace: 'nowrap' }}>
+          {{ success: '✓', error: '✗', warning: '⚠' }[cardToast.type]} {cardToast.message}
         </div>
       )}
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
     </div>
   );
 }
@@ -369,7 +375,7 @@ function PartsTable({ item }) {
               </div>
             </div>
             {hasSubParts && p.subParts.map((sp, si) => (
-              <div key={si} className="sub-row">
+              <div key={sp.id ?? sp.name ?? si} className="sub-row">
                 <div className="sub-row-name">↳ {esc(sp.name)}</div>
                 <span className="part-row-qty" style={{ fontSize: 11 }}>{sp.printed || 0}/{sp.qty || 1}</span>
                 <span className={`sp sp-${sp.status}`} style={{ cursor: 'pointer', fontSize: 11 }} title="click to change" onClick={() => openModal('status', { partId: p.id, subIdx: si })}>{sp.status}</span>

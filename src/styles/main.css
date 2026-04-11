@@ -22,6 +22,7 @@
   }
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
+:focus-visible { outline: 2px solid var(--info-text, #0c447c); outline-offset: 2px; }
 body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; }
 .titlebar { -webkit-app-region: drag; height: 32px; background: var(--bg2); border-bottom: 0.5px solid var(--border); display: flex; align-items: center; padding: 0 16px; flex-shrink: 0; }
 .titlebar-title { font-size: 13px; color: var(--text2); font-weight: 500; }
@@ -34,6 +35,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 .btn-primary:hover { opacity: .85; }
 .btn-success { background: var(--green-bg); border-color: var(--green-border); color: var(--green-dark); }
 .btn-success:hover { opacity: .85; }
+.btn-danger { background: var(--red-bg, #fcebeb); border-color: var(--red-text, #791f1f); color: var(--red-text, #791f1f); }
+.btn-danger:hover { opacity: .85; }
+.toast { background: var(--bg2); border: 0.5px solid var(--border2); color: var(--text); }
+.toast-success { background: var(--green-bg); border-color: var(--green-border); color: var(--green-dark); }
+.toast-error   { background: var(--red-bg, #fcebeb); border-color: var(--red-text, #791f1f); color: var(--red-text, #791f1f); }
+.toast-warning { background: var(--amber-bg); border-color: var(--amber-text); color: var(--amber-text); }
 .btn-n3d { border-color: #7f77dd; color: #3c3489; }
 :root[data-theme="dark"] .btn-n3d { border-color: #7f77dd; color: #a89eff; }
 .view-toggle { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -43,10 +50,12 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #vb-archive.active       { background: #FAEEDA; color: #633806; border-color: #EF9F27; }
 #vb-colours.active       { background: #EEEDFE; color: #3C3489; border-color: #AFA9EC; }
 #vb-inventory.active     { background: #EAF3DE; color: #27500A; border-color: #97C459; }
+#vb-printers.active      { background: #F0EDFE; color: #3C3489; border-color: #AFA9EC; }
 #vb-product:hover:not(.active)   { border-color: #B5D4F4; }
 #vb-archive:hover:not(.active)   { border-color: #FAC775; }
 #vb-colours:hover:not(.active)   { border-color: #CECBF6; }
 #vb-inventory:hover:not(.active) { border-color: #C0DD97; }
+#vb-printers:hover:not(.active)  { border-color: #CECBF6; }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; margin-bottom: 18px; }
 .stat { background: var(--bg2); border-radius: var(--radius); padding: 10px 14px; }
 .stat-label { font-size: 11px; color: var(--text2); margin-bottom: 3px; }

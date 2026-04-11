@@ -161,8 +161,8 @@ export default function PartModal() {
 
   return (
     <div id="modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal">
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
           <h3>{editId ? 'edit part' : 'add part'}</h3>
           <div className="section-label">part info</div>
           <div className="field"><label>part name *</label><input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. motor mount bracket" autoFocus /></div>

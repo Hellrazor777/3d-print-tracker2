@@ -20,8 +20,8 @@ export default function PartsBoxCheckModal() {
 
   return (
     <div id="modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ maxWidth: 340, textAlign: 'center' }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ maxWidth: 340, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>📦</div>
           <h3 style={{ marginBottom: 8 }}>Check parts box {boxLabel}</h3>
           <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 20, lineHeight: 1.5 }}>

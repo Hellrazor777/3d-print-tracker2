@@ -17,17 +17,19 @@ export default function RenameCatModal() {
 
   return (
     <div id="rename-cat-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 320 }}>
-          <h3>{title}</h3>
-          <div className="field">
-            <label>New name</label>
-            <input value={value} onChange={e => setValue(e.target.value)} placeholder="Name" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleConfirm(); }} />
-          </div>
-          <div className="modal-footer">
-            <button className="btn" onClick={closeModal}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleConfirm}>Rename</button>
-          </div>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 320 }} onClick={e => e.stopPropagation()}>
+          <form onSubmit={e => { e.preventDefault(); handleConfirm(); }}>
+            <h3>{title}</h3>
+            <div className="field">
+              <label>New name</label>
+              <input value={value} onChange={e => setValue(e.target.value)} placeholder="Name" autoFocus />
+            </div>
+            <div className="modal-footer">
+              <button className="btn" type="button" onClick={closeModal}>Cancel</button>
+              <button className="btn btn-primary" type="submit">Rename</button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 function esc(s) { return String(s || ''); }
 
 export default function ArchiveView() {
   const { parts, products, unarchiveProduct, restartProduct, deleteProductPermanently, openModal } = useApp();
   const archived = [...new Set(parts.map(p => p.item).filter(Boolean))].filter(i => products[i]?.archived);
+  const [confirmState, setConfirmState] = useState(null);
 
   if (!archived.length) {
     return <p style={{ color: 'var(--text2)', fontSize: 13, padding: '1rem 0' }}>no archived products yet.</p>;
@@ -40,20 +43,33 @@ export default function ArchiveView() {
                   }
                 }}>↑ restore</button>
                 <button className="btn btn-primary" style={{ fontSize: 12, padding: '4px 12px', marginLeft: 4 }} onClick={() => {
-                  if (confirm(`Restart "${item}" from scratch? All part statuses and print counts will be reset to queue. Your inventory history is kept.`)) {
-                    if (products[item]?.partsBoxEnabled) {
-                      openModal('parts-box-check', { item, action: 'restart' });
-                    } else {
-                      restartProduct(item);
-                    }
-                  }
+                  setConfirmState({
+                    message: `Restart "${item}" from scratch? All part statuses and print counts will be reset to queue. Your inventory history is kept.`,
+                    confirmLabel: 'restart',
+                    onConfirm: () => {
+                      setConfirmState(null);
+                      if (products[item]?.partsBoxEnabled) {
+                        openModal('parts-box-check', { item, action: 'restart' });
+                      } else {
+                        restartProduct(item);
+                      }
+                    },
+                  });
                 }}>⟳ restart</button>
-                <button className="btn" style={{ fontSize: 12, padding: '4px 12px', marginLeft: 4, color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={() => { if (confirm(`Permanently delete "${item}" and all its parts? This cannot be undone.`)) deleteProductPermanently(item); }}>delete</button>
+                <button className="btn" style={{ fontSize: 12, padding: '4px 12px', marginLeft: 4, color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={() => {
+                  setConfirmState({
+                    message: `Permanently delete "${item}" and all its parts? This cannot be undone.`,
+                    confirmLabel: 'delete',
+                    danger: true,
+                    onConfirm: () => { setConfirmState(null); deleteProductPermanently(item); },
+                  });
+                }}>delete</button>
               </div>
             </div>
           );
         })}
       </div>
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
     </div>
   );
 }

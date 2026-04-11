@@ -213,8 +213,8 @@ export default function N3DModal() {
 
   return (
     <div id="n3d-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 780, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 780, maxWidth: '96vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }} onClick={e => e.stopPropagation()}>
           <div className="settings-header">
             <span className="settings-title">N3D Melbourne</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>

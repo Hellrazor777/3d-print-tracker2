@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp, localFileUrl } from '../context/AppContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 export default function ManageProductModal() {
   const { modal, closeModal, saveManageProduct, deleteProductPermanently, products, parts, getCategoryOrder, isElectron, appSettings } = useApp();
@@ -17,17 +18,21 @@ export default function ManageProductModal() {
   const [partsBox, setPartsBox] = useState(prod.partsBox || '');
   const cats = getCategoryOrder();
 
+  const [uploadingImage, setUploadingImage] = useState(false);
   const handleUploadImage = async () => {
     if (!window.electronAPI) return;
-    let destFolder = '';
-    if (imagePath) {
-      destFolder = imagePath.replace(/[^/\\]*$/, '');
-    } else if (appSettings.threeMfFolder && item) {
-      destFolder = await window.electronAPI.getProductFolder(item, appSettings.threeMfFolder) || '';
-    }
-    const result = await window.electronAPI.uploadImage(destFolder, item + '_cover');
-    const filePath = result?.destPath || result?.path;
-    if (filePath) setImagePath(filePath);
+    setUploadingImage(true);
+    try {
+      let destFolder = '';
+      if (imagePath) {
+        destFolder = imagePath.replace(/[^/\\]*$/, '');
+      } else if (appSettings.threeMfFolder && item) {
+        destFolder = await window.electronAPI.getProductFolder(item, appSettings.threeMfFolder) || '';
+      }
+      const result = await window.electronAPI.uploadImage(destFolder, item + '_cover');
+      const filePath = result?.destPath || result?.path;
+      if (filePath) setImagePath(filePath);
+    } finally { setUploadingImage(false); }
   };
 
   const handleSave = () => {
@@ -35,17 +40,23 @@ export default function ManageProductModal() {
     saveManageProduct({ oldName: item, newName: name.trim(), category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxEnabled, partsBox: partsBox.trim() });
   };
 
+  const [confirmState, setConfirmState] = useState(null);
+
   const handleDelete = () => {
     const partCount = parts.filter(p => p.item === item).length;
-    if (confirm(`Delete "${item}" and all ${partCount} part${partCount !== 1 ? 's' : ''}? This cannot be undone.`)) {
-      deleteProductPermanently(item);
-    }
+    setConfirmState({
+      message: `Delete "${item}" and all ${partCount} part${partCount !== 1 ? 's' : ''}? This cannot be undone.`,
+      confirmLabel: 'delete',
+      danger: true,
+      onConfirm: () => { setConfirmState(null); deleteProductPermanently(item); },
+    });
   };
 
   return (
     <div id="rename-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 300 }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 300 }} onClick={e => e.stopPropagation()}>
+          <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
           <h3>Manage Product</h3>
           <div className="field"><label>product name</label><input value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
           <div className="field">
@@ -89,20 +100,22 @@ export default function ManageProductModal() {
                   <img src={localFileUrl(imagePath)} style={{ width: 80, height: 80, objectFit: 'cover', borderRadius: 8, border: '0.5px solid var(--border2)' }} alt="" />
                 </div>
               )}
-              <button className="btn" onClick={handleUploadImage} style={{ width: '100%' }}>
-                {imagePath ? 'change photo' : 'upload photo'}
+              <button className="btn" type="button" onClick={handleUploadImage} disabled={uploadingImage} style={{ width: '100%' }}>
+                {uploadingImage ? 'uploading…' : (imagePath ? 'change photo' : 'upload photo')}
               </button>
             </div>
           )}
           <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
-            <button className="btn" style={{ color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={handleDelete}>delete product</button>
+            <button className="btn" type="button" style={{ color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={handleDelete}>delete product</button>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={closeModal}>cancel</button>
-              <button className="btn btn-primary" onClick={handleSave}>save</button>
+              <button className="btn" type="button" onClick={closeModal}>cancel</button>
+              <button className="btn btn-primary" type="submit">save</button>
             </div>
           </div>
+          </form>
         </div>
       </div>
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
     </div>
   );
 }

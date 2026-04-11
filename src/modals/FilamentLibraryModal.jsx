@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 const isElectron = !!window.electronAPI;
 
@@ -73,6 +74,7 @@ function FilamentForm({ initial, onSave, onCancel }) {
 // ── Main Modal ───────────────────────────────────────────────────────────────
 export default function FilamentLibraryModal() {
   const { filaments, addFilament, updateFilament, deleteFilament, saveFilaments, closeModal } = useApp();
+  const [confirmState, setConfirmState] = useState(null);
   const [adding, setAdding] = useState(false);
   const [editId, setEditId] = useState(null);
   const [filterBrand, setFilterBrand] = useState('');
@@ -171,8 +173,8 @@ export default function FilamentLibraryModal() {
 
   return (
     <div id="filament-library-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal settings-modal" style={{ maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal settings-modal" style={{ maxWidth: 680, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
           <div className="settings-header">
             <span className="settings-title">Filament Library</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
@@ -246,7 +248,7 @@ export default function FilamentLibraryModal() {
                               <div style={{ fontSize: 11, color: 'var(--text2)' }}>{esc(f.hex)}</div>
                             </div>
                             <button className="btn" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => setEditId(f.id)}>edit</button>
-                            <button className="btn" style={{ fontSize: 11, padding: '2px 8px', color: 'var(--red, #e63946)' }} onClick={() => { if (confirm(`Delete "${f.name}"?`)) deleteFilament(f.id); }}>delete</button>
+                            <button className="btn" style={{ fontSize: 11, padding: '2px 8px', color: 'var(--red-text, #e63946)' }} onClick={() => setConfirmState({ message: `Delete "${f.name}"?`, confirmLabel: 'delete', danger: true, onConfirm: () => { setConfirmState(null); deleteFilament(f.id); } })}>delete</button>
                           </div>
                         )
                       ))}
@@ -262,6 +264,7 @@ export default function FilamentLibraryModal() {
           </div>
         </div>
       </div>
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
     </div>
   );
 }

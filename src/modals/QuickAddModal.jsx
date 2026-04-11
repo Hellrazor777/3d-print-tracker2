@@ -29,8 +29,8 @@ export default function QuickAddModal() {
 
   return (
     <div id="quick-add-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 360 }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 360 }} onClick={e => e.stopPropagation()}>
           <h3>Add to inventory</h3>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 18, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{productName}</p>
           <div className="field" style={{ marginBottom: 20 }}>

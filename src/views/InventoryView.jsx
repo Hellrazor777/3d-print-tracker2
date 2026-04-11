@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ConfirmDialog, NumericPrompt } from '../components/ConfirmDialog';
 
 function esc(s) { return String(s || ''); }
 
@@ -51,6 +52,8 @@ export default function InventoryView() {
   const { inventory, invExpanded, toggleInvCard, openModal, fetchLocalIP, localIP } = useApp();
   const [search,  setSearch]  = useState('');
   const [invSort, setInvSort] = useState('az');
+  const [fetchingIP, setFetchingIP] = useState(false);
+  const handleFetchIP = async () => { setFetchingIP(true); try { await fetchLocalIP(); } finally { setFetchingIP(false); } };
 
   const needle = search.trim().toLowerCase();
   const filtered = inventory.filter(item =>
@@ -75,7 +78,7 @@ export default function InventoryView() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           {localIP
             ? <PhoneInventoryUrl raw={localIP} />
-            : <button className="btn" onClick={fetchLocalIP}>Show phone URL</button>
+            : <button className="btn" onClick={handleFetchIP} disabled={fetchingIP}>{fetchingIP ? 'detecting…' : 'Show phone URL'}</button>
           }
           <button className="btn btn-primary" onClick={() => openModal('add-inventory')}>+ Add Product</button>
         </div>
@@ -169,6 +172,8 @@ function InvDetail({ item }) {
   const [logNote, setLogNote] = useState('');
   const [labelMode, setLabelMode] = useState(false);
   const [labelVal, setLabelVal] = useState(item.location || '');
+  const [confirmState, setConfirmState] = useState(null);
+  const [numericState, setNumericState] = useState(null);
 
   const storageKey = item.id + '-storage';
   const outgoingKey = item.id + '-outgoing';
@@ -205,10 +210,7 @@ function InvDetail({ item }) {
               <div style={{ display: 'flex' }}>
                 <button className="qty-btn" onClick={() => invAdjustLocation(item.id, loc, -1)}>−</button>
                 <div style={{ minWidth: 50, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '0.5px solid var(--border2)', borderBottom: '0.5px solid var(--border2)', fontSize: 16, fontWeight: 600, cursor: 'pointer' }}
-                  onClick={() => {
-                    const v = parseInt(prompt(`Set ${loc} count:`, storage[loc] || 0));
-                    if (!isNaN(v)) invSetLocation(item.id, loc, v);
-                  }}>{storage[loc] || 0}</div>
+                  onClick={() => setNumericState({ label: `Set ${loc} count:`, initial: storage[loc] || 0, onConfirm: v => { setNumericState(null); invSetLocation(item.id, loc, v); } })}>{storage[loc] || 0}</div>
                 <button className="qty-btn" onClick={() => invAdjustLocation(item.id, loc, 1)}>+</button>
               </div>
             </div>
@@ -224,7 +226,7 @@ function InvDetail({ item }) {
         <div style={{ display: 'flex' }}>
           <button className="qty-btn" onClick={() => invAdjustBuilt(item.id, -1)}>−</button>
           <div style={{ minWidth: 50, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', borderTop: '0.5px solid var(--border2)', borderBottom: '0.5px solid var(--border2)', fontSize: 16, fontWeight: 600, cursor: 'pointer' }}
-            onClick={() => { const v = parseInt(prompt('Set built count:', item.built || 0)); if (!isNaN(v)) invSetBuilt(item.id, v); }}>
+            onClick={() => setNumericState({ label: 'Set built count:', initial: item.built || 0, onConfirm: v => { setNumericState(null); invSetBuilt(item.id, v); } })}>
             {item.built || 0}
           </div>
           <button className="qty-btn" onClick={() => invAdjustBuilt(item.id, 1)}>+</button>
@@ -284,10 +286,12 @@ function InvDetail({ item }) {
         ) : (
           <>
             <button className="btn" style={{ flex: 1, fontSize: 12 }} onClick={() => setLabelMode(true)}>set label</button>
-            <button className="btn" style={{ fontSize: 12, color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={() => { if (confirm('Remove this item from inventory?')) invDeleteItem(item.id); }}>delete</button>
+            <button className="btn" style={{ fontSize: 12, color: 'var(--red-text)', borderColor: 'var(--red-text)' }} onClick={() => setConfirmState({ message: 'Remove this item from inventory?', confirmLabel: 'delete', danger: true, onConfirm: () => { setConfirmState(null); invDeleteItem(item.id); } })}>delete</button>
           </>
         )}
       </div>
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
+      {numericState && <NumericPrompt {...numericState} onCancel={() => setNumericState(null)} />}
     </div>
   );
 }

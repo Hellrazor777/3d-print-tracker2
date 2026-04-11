@@ -81,8 +81,8 @@ export default function ConflictModal() {
 
   return (
     <div id="conflict-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 420 }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 420 }} onClick={e => e.stopPropagation()}>
           <h3>Import Conflict</h3>
 
           <div style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12 }}>

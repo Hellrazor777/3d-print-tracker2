@@ -22,8 +22,8 @@ export default function StatusModal() {
 
   return (
     <div id="status-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal" style={{ width: 300 }}>
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal" style={{ width: 300 }} onClick={e => e.stopPropagation()}>
           <h3>change status — {current.name}</h3>
           {current.status === 'done' && !isSubPart && (
             <p style={{ fontSize: 13, color: 'var(--text2)', marginBottom: '1rem', lineHeight: 1.5 }}>This part is marked done. Reset it to:</p>

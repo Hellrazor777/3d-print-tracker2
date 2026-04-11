@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 
 function esc(s) { return String(s || ''); }
 
@@ -32,10 +33,14 @@ export default function SettingsModal() {
     }
   });
 
+  const [pushing, setPushing] = useState(false);
   const handlePushToCloud = async () => {
+    setPushing(true);
     setPushStatus('pushing…');
-    const r = await window.electronAPI.pushLocalToCloud();
-    setPushStatus(r.ok ? 'pushed — reload the app to confirm' : ('error: ' + r.error));
+    try {
+      const r = await window.electronAPI.pushLocalToCloud();
+      setPushStatus(r.ok ? 'pushed — reload the app to confirm' : ('error: ' + r.error));
+    } finally { setPushing(false); }
   };
 
   const [form, setForm] = useState({
@@ -70,6 +75,8 @@ export default function SettingsModal() {
     closeModal();
   };
 
+  const [confirmState, setConfirmState] = useState(null);
+
   const SYSTEM_CATS = ['ready to build', 'printing', 'commenced'];
   const cats = getCategoryOrder().filter(c => !SYSTEM_CATS.includes(c.toLowerCase()));
   const locs = getStorageLocations();
@@ -78,8 +85,8 @@ export default function SettingsModal() {
 
   return (
     <div id="settings-modal" style={{ display: '' }}>
-      <div className="modal-bg" onClick={e => e.stopPropagation()}>
-        <div className="modal settings-modal">
+      <div className="modal-bg" onClick={closeModal}>
+        <div className="modal settings-modal" onClick={e => e.stopPropagation()}>
           <div className="settings-header">
             <span className="settings-title">Settings</span>
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
@@ -106,7 +113,7 @@ export default function SettingsModal() {
                   <button className="btn cat-row-btn" disabled={idx === 0} onClick={() => moveCategoryOrder(cat, 'up')}>↑</button>
                   <button className="btn cat-row-btn" disabled={idx === cats.length - 1} onClick={() => moveCategoryOrder(cat, 'down')}>↓</button>
                   <button className="btn cat-row-btn" onClick={() => openModal('rename-cat', { oldName: cat, mode: 'category', title: 'Rename Category' })}>Rename</button>
-                  <button className="btn cat-row-btn cat-row-del" onClick={() => { if (confirm(`Remove category "${cat}" from all products?`)) removeCategory(cat); }}>✕</button>
+                  <button className="btn cat-row-btn cat-row-del" onClick={() => setConfirmState({ message: `Remove category "${cat}" from all products?`, confirmLabel: 'remove', danger: true, onConfirm: () => { setConfirmState(null); removeCategory(cat); } })}>✕</button>
                 </div>
               ))}
               <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -186,7 +193,7 @@ export default function SettingsModal() {
                     <span className="cat-row-name">{esc(loc)}</span>
                     <button className="btn cat-row-btn" disabled={idx === 0} onClick={() => moveStorageLocation(loc, 'up')}>↑</button>
                     <button className="btn cat-row-btn" onClick={() => openModal('rename-cat', { oldName: loc, mode: 'storage', title: 'Rename Location' })}>Rename</button>
-                    <button className="btn cat-row-btn cat-row-del" disabled={locs.length <= 1} onClick={() => { if (confirm(`Remove "${loc}"?`)) removeStorageLocation(loc); }}>✕</button>
+                    <button className="btn cat-row-btn cat-row-del" disabled={locs.length <= 1} onClick={() => setConfirmState({ message: `Remove "${loc}"?`, confirmLabel: 'remove', danger: true, onConfirm: () => { setConfirmState(null); removeStorageLocation(loc); } })}>✕</button>
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -202,7 +209,7 @@ export default function SettingsModal() {
                     <span className="cat-row-name">{esc(dest)}</span>
                     <button className="btn cat-row-btn" disabled={idx === 0} onClick={() => moveOutgoingDest(idx, 'up')}>↑</button>
                     <button className="btn cat-row-btn" onClick={() => openModal('rename-cat', { oldName: dest, idx, mode: 'dest', title: 'Rename Destination' })}>Rename</button>
-                    <button className="btn cat-row-btn cat-row-del" onClick={() => { if (confirm(`Remove destination "${dest}"?`)) removeOutgoingDest(dest); }}>✕</button>
+                    <button className="btn cat-row-btn cat-row-del" onClick={() => setConfirmState({ message: `Remove destination "${dest}"?`, confirmLabel: 'remove', danger: true, onConfirm: () => { setConfirmState(null); removeOutgoingDest(dest); } })}>✕</button>
                   </div>
                 ))}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -218,7 +225,7 @@ export default function SettingsModal() {
             {isElectron && isCloud && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {pushStatus && <span style={{ fontSize: 11, color: pushStatus.startsWith('error') ? 'var(--red-text, #ef4444)' : 'var(--text2)' }}>{pushStatus}</span>}
-                <button className="btn" onClick={handlePushToCloud} title="Overwrite Supabase with your local data.json">↑ Push local to cloud</button>
+                <button className="btn" onClick={handlePushToCloud} disabled={pushing} title="Overwrite Supabase with your local data.json">{pushing ? 'pushing…' : '↑ Push local to cloud'}</button>
               </div>
             )}
             <button className="btn" onClick={closeModal}>Cancel</button>
@@ -226,6 +233,7 @@ export default function SettingsModal() {
           </div>
         </div>
       </div>
+      {confirmState && <ConfirmDialog {...confirmState} onCancel={() => setConfirmState(null)} />}
     </div>
   );
 }

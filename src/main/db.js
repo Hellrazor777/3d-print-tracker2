@@ -18,7 +18,7 @@ const dbReadyPromise = (async () => {
     const { Pool } = require('pg');
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ssl: true, // Supabase provides a valid certificate — verify it
       connectionTimeoutMillis: 5000,
     });
     await pool.query('SELECT 1');
@@ -32,21 +32,25 @@ const dbReadyPromise = (async () => {
 
 // ─── Local file helpers ───────────────────────────────────────────────────────
 
+function atomicWrite(filePath, json, fs) {
+  const tmp = filePath + '.tmp';
+  fs.writeFileSync(tmp, json, 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
 function writeLocalData(data, localPath, fs) {
   try {
-    const bakPath = localPath + '.bak';
-    if (fs.existsSync(localPath)) fs.copyFileSync(localPath, bakPath);
-    fs.writeFileSync(localPath, JSON.stringify(data), 'utf8');
+    atomicWrite(localPath, JSON.stringify(data), fs);
   } catch (err) {
-    console.warn('[db] Local backup write failed:', err.message);
+    console.warn('[db] Local data write failed:', err.message);
   }
 }
 
 function writeLocalSettings(settings, settingsPath, fs) {
   try {
-    fs.writeFileSync(settingsPath, JSON.stringify(settings), 'utf8');
+    atomicWrite(settingsPath, JSON.stringify(settings), fs);
   } catch (err) {
-    console.warn('[db] Local settings backup write failed:', err.message);
+    console.warn('[db] Local settings write failed:', err.message);
   }
 }
 
@@ -75,7 +79,10 @@ async function saveData(data, localPath, fs) {
   if (usePostgres) {
     try {
       await pgPool.query(
-        "UPDATE app_data SET data = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+        `INSERT INTO app_data (id, data, updated_at)
+         VALUES ('default', $1::jsonb, NOW())
+         ON CONFLICT (id) DO UPDATE
+           SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at`,
         [JSON.stringify(data)]
       );
     } catch (err) {
@@ -108,7 +115,10 @@ async function saveSettings(settings, settingsPath, fs) {
   if (usePostgres) {
     try {
       await pgPool.query(
-        "UPDATE app_data SET settings = $1::jsonb, updated_at = NOW() WHERE id = 'default'",
+        `INSERT INTO app_data (id, settings, updated_at)
+         VALUES ('default', $1::jsonb, NOW())
+         ON CONFLICT (id) DO UPDATE
+           SET settings = EXCLUDED.settings, updated_at = EXCLUDED.updated_at`,
         [JSON.stringify(settings)]
       );
     } catch (err) {

@@ -58,6 +58,19 @@ export function AppProvider({ children }) {
   });
   const [printerStatus, setPrinterStatus] = useState({});   // serial/id → state
   const [bambuConn, setBambuConn] = useState({ connected: false, connecting: false });
+  // ── Undo stack (circular buffer, max 10) ──
+  const [undoStack, setUndoStack] = useState([]); // array of { label, fn }
+  const pushUndo = useCallback((label, fn) => {
+    setUndoStack(s => [...s.slice(-9), { label, fn }]);
+  }, []);
+  const undo = useCallback(() => {
+    setUndoStack(s => {
+      if (!s.length) return s;
+      const top = s[s.length - 1];
+      top.fn();
+      return s.slice(0, -1);
+    });
+  }, []);
   const [currentView, setCurrentView] = useState('product');
   const [lastMovedProduct, setLastMovedProduct] = useState(null); // product name that just changed section
   const [sliceFilter, setSliceFilter] = useState('all');
@@ -285,8 +298,10 @@ export function AppProvider({ children }) {
   }, []);
 
   const deletePart = useCallback((id) => {
+    const deleted = partsRef.current.find(p => p.id === id);
+    if (deleted) pushUndo(`restore "${deleted.name}"`, () => setParts(prev => [...prev, deleted]));
     setParts(prev => prev.filter(p => p.id !== id));
-  }, []);
+  }, [pushUndo]);
 
   const saveCard = useCallback((formData, editId) => {
     const { name, item, variant, colours, qty, status } = formData;
@@ -419,14 +434,21 @@ export function AppProvider({ children }) {
   }, [closeModal]);
 
   const deleteProductPermanently = useCallback((name) => {
+    const savedParts = partsRef.current.filter(p => p.item === name);
+    const savedProduct = productsRef.current[name];
+    pushUndo(`restore "${name}"`, () => {
+      setParts(prev => [...prev, ...savedParts]);
+      setProducts(prev => ({ ...prev, [name]: savedProduct }));
+    });
     setParts(prev => prev.filter(p => p.item !== name));
     setProducts(prev => { const next = { ...prev }; delete next[name]; return next; });
     closeModal();
-  }, [closeModal]);
+  }, [closeModal, pushUndo]);
 
   const archiveProduct = useCallback((name) => {
+    pushUndo(`unarchive "${name}"`, () => setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: false } })));
     setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: true } }));
-  }, []);
+  }, [pushUndo]);
 
   const unarchiveProduct = useCallback((name) => {
     setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: false } }));
@@ -606,9 +628,11 @@ export function AppProvider({ children }) {
   }, [getStorageLocations, syncStorageLocs]);
 
   const invDeleteItem = useCallback((id) => {
+    const deleted = inventory.find(i => i.id === id);
+    if (deleted) pushUndo(`restore "${deleted.name}"`, () => setInventory(prev => [...prev, deleted]));
     setInventory(prev => prev.filter(i => i.id !== id));
     setInvExpanded(prev => { const next = new Set(prev); next.delete(id); return next; });
-  }, []);
+  }, [inventory, pushUndo]);
 
   const addInventoryManual = useCallback((name, qty, cat) => {
     const locs = getStorageLocations();
@@ -849,8 +873,10 @@ export function AppProvider({ children }) {
   }, []);
 
   const deleteFilament = useCallback((id) => {
+    const deleted = filaments.find(x => x.id === id);
+    if (deleted) pushUndo(`restore filament "${deleted.name || deleted.brand}"`, () => setFilaments(prev => [...prev, deleted]));
     setFilaments(prev => prev.filter(x => x.id !== id));
-  }, []);
+  }, [filaments, pushUndo]);
 
   const openExternalUrl = useCallback((url) => {
     if (window.electronAPI?.openExternal) window.electronAPI.openExternal(url);
@@ -877,15 +903,17 @@ export function AppProvider({ children }) {
 
   // ── Export CSV ──
   const exportData = useCallback(async () => {
+    // RFC 4180: wrap every field in double-quotes, escape internal " as ""
+    const csvField = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
     const COLS = ['product', 'part_name', 'variant', 'colour_name', 'colour_hex', 'stl', 'qty', 'category', 'description'];
-    const rows = [COLS.join(',')];
+    const rows = [COLS.map(csvField).join(',')];
     partsRef.current.forEach(p => {
       const cat = productsRef.current[p.item]?.category || '';
       const colours = p.colours?.length ? p.colours : (p.colour ? [{ hex: p.colour, name: p.colourName || '' }] : []);
       const colourNames = colours.map(c => c.name || '').join('|');
       const colourHexes = colours.map(c => c.hex || '').join('|');
       rows.push([p.item, p.name, p.variant, colourNames, colourHexes, p.stl, p.qty, cat, p.desc]
-        .map(v => String(v || '').replace(/,/g, ';')).join(','));
+        .map(csvField).join(','));
     });
     const content = rows.join('\n');
     if (isElectron) {
@@ -905,6 +933,7 @@ export function AppProvider({ children }) {
     openProducts, catExpanded, colourExpanded, invExpanded, invSectionCollapsed,
     invLogQty, setInvLogQty, invLogDest, setInvLogDest, localIP, modal, loaded,
     printerStatus, bambuConn, lastMovedProduct, setLastMovedProduct,
+    undoStack, undo,
     // Helpers
     getCategoryOrder, getStorageLocations, getOutgoingDests, getItems, isReady, productHas3mf, invOnHand, invMigrateStorage,
     // UI

@@ -4,18 +4,47 @@ import { useApp } from '../context/AppContext';
 function esc(s) { return String(s || ''); }
 
 
+/** RFC 4180-compliant CSV field parser. */
+function parseCsvRow(line) {
+  const fields = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (line[i] === '"') {
+      // Quoted field
+      i++; // skip opening quote
+      let val = '';
+      while (i < line.length) {
+        if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
+        else if (line[i] === '"') { i++; break; } // closing quote
+        else { val += line[i++]; }
+      }
+      fields.push(val);
+      if (line[i] === ',') i++; // skip delimiter
+    } else {
+      // Unquoted field — read until comma or end
+      const end = line.indexOf(',', i);
+      if (end === -1) { fields.push(line.slice(i)); break; }
+      fields.push(line.slice(i, end));
+      i = end + 1;
+    }
+  }
+  return fields;
+}
+
 function parseCSV(text) {
+  // Split into lines preserving quoted newlines is not needed for our export format,
+  // but we do need to handle \r\n and skip blank lines.
   const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
   if (lines.length < 2) return { error: 'Need at least a header row and one data row.' };
 
-  const header = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  const header = parseCsvRow(lines[0]).map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
   const idx = k => header.indexOf(k);
   const missing = ['product', 'part_name'].filter(k => idx(k) === -1);
   if (missing.length) return { error: `Missing required columns: ${missing.join(', ')}.` };
 
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(',');
+    const cols = parseCsvRow(lines[i]);
     const get = k => idx(k) > -1 ? (cols[idx(k)] || '').trim() : '';
     const product = get('product'), part_name = get('part_name');
     if (!product || !part_name) continue;

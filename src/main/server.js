@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
 
 const MAX_BODY_BYTES = 512 * 1024;
 
@@ -80,7 +81,7 @@ function validateInventoryUpdate(raw) {
   return { ok: true, item };
 }
 
-function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
+function startLocalServer(PORT, DATA_PATH, mainWin, onListening, SETTINGS_PATH) {
   const mobileHtmlPath = path.join(__dirname, '..', 'mobile.html');
   const localServer = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -92,6 +93,15 @@ function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
     if (req.method === 'GET' && url.pathname === '/data') {
       try {
         const data = fs.existsSync(DATA_PATH) ? JSON.parse(fs.readFileSync(DATA_PATH, 'utf8')) : {};
+        // Inject outgoing destinations from settings so mobile UI renders custom dests dynamically
+        if (SETTINGS_PATH && fs.existsSync(SETTINGS_PATH)) {
+          try {
+            const settings = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+            if (Array.isArray(settings.outgoingDests) && settings.outgoingDests.length) {
+              data._outgoingDests = settings.outgoingDests;
+            }
+          } catch {}
+        }
         res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store, no-cache, must-revalidate', 'Pragma': 'no-cache' });
         res.end(JSON.stringify(data));
       } catch(e) { res.writeHead(500); res.end(JSON.stringify({ error: e.message })); }
@@ -104,11 +114,15 @@ function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
       req.on('data', chunk => {
         if (tooLarge) return;
         body += chunk;
-        if (body.length > MAX_BODY_BYTES) tooLarge = true;
+        if (body.length > MAX_BODY_BYTES) {
+          tooLarge = true;
+          req.resume(); // drain remaining data so the socket isn't left open
+        }
       });
       req.on('end', () => {
         if (tooLarge) {
           jsonErr(res, 413, 'Request body too large');
+          res.end();
           return;
         }
         try {
@@ -136,6 +150,11 @@ function startLocalServer(PORT, DATA_PATH, mainWin, onListening) {
           else data.inventory.push(update);
 
           fs.writeFileSync(DATA_PATH, JSON.stringify(data), 'utf8');
+          // Also push to cloud (Supabase) so mobile updates reach the cloud db.
+          // Fire-and-forget: local write already succeeded, cloud failure is logged.
+          db.saveData(data, DATA_PATH, fs).catch(err =>
+            console.warn('[server] Cloud sync after mobile POST failed:', err.message)
+          );
           if (mainWin) mainWin.webContents.send('inventory-updated');
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true }));

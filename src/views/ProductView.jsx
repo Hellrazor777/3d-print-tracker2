@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp, localFileUrl } from '../context/AppContext';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
@@ -239,7 +240,7 @@ function ProductCard({ item }) {
 
   return (
     <div id={`product-card-${item.replace(/[^a-zA-Z0-9]/g, '_')}`} className={`product-card${isReady ? ' ready' : ''}`}>
-      {imgOpen && localFileUrl(iconPath) && (
+      {imgOpen && localFileUrl(iconPath) && createPortal(
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.88)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}
           onClick={() => setImgOpen(false)}
@@ -254,7 +255,8 @@ function ProductCard({ item }) {
             <span style={{ color: '#fff', fontSize: 15, fontWeight: 500, textShadow: '0 1px 4px rgba(0,0,0,.6)' }}>{esc(item)}</span>
             <button style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 20, width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }} onClick={() => setImgOpen(false)}>✕</button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       <div className="product-header" onClick={() => toggleProduct(item)}>
         <div className="product-title-wrap">

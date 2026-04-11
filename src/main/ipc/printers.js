@@ -81,7 +81,8 @@ class MqttTls extends EventEmitter {
   }
   connect({ host, port = 8883, clientId, username, password, keepalive = 60 }) {
     this._ka = keepalive;
-    this.socket = tls.connect({ host, port, rejectUnauthorized: false });
+    // Bambu cloud MQTT uses a valid public certificate — verify it.
+    this.socket = tls.connect({ host, port });
     this.socket.on('secureConnect', () => this.socket.write(buildConnect(clientId, username, password, keepalive)));
     this.socket.on('data', d => { this._buf = Buffer.concat([this._buf, d]); this._drain(); });
     this.socket.on('error', e => { if (!this._dead) this.emit('error', e); });
@@ -689,6 +690,8 @@ const cameraConnections = {}; // serial → { socket, active }
 function startCameraStream(serial, ip, accessCode) {
   stopCameraStream(serial); // clean up any previous connection
 
+  // Bambu LAN camera (port 6000) uses a proprietary self-signed certificate —
+  // rejectUnauthorized must stay false here or LAN streaming breaks.
   const socket = tls.connect({ host: ip, port: 6000, rejectUnauthorized: false });
 
   const conn = { socket, active: true };
@@ -795,7 +798,7 @@ function wsClientConnect(url, token, onOpen, onClose) {
     port,
     path: u.pathname + (u.search || ''),
     method: 'GET',
-    rejectUnauthorized: false,
+    // Camera relay server (Render.com / user-hosted) uses a valid certificate.
     headers: {
       'Upgrade': 'websocket',
       'Connection': 'Upgrade',
@@ -896,7 +899,9 @@ function stopRelay() {
   relayReconnectTimer = null;
   if (relaySocket) {
     try {
-      relaySocket.write(Buffer.from([0x88, 0x80, 0, 0, 0, 0])); // WS close frame
+      // RFC 6455 close frame: opcode 0x88, masked (0x80), payload len 0, random 4-byte mask
+      const closeMask = crypto.randomBytes(4);
+      relaySocket.write(Buffer.from([0x88, 0x80, closeMask[0], closeMask[1], closeMask[2], closeMask[3]]));
       relaySocket.destroy();
     } catch {}
     relaySocket = null;
@@ -916,7 +921,7 @@ function getRelayStatus() {
 function autoStart(loadSettings) {
   const tryStart = async () => {
     try {
-      const settings = loadSettings();
+      const settings = await loadSettings();
       if (!settings) return;
       if (settings.bambuAuth?.accessToken) {
         bambuDevices = settings.bambuAuth.devices || [];

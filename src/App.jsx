@@ -27,7 +27,7 @@ import PartsBoxCheckModal from './modals/PartsBoxCheckModal';
 const popoutView = new URLSearchParams(window.location.search).get('popout');
 
 export default function App() {
-  const { currentView, loaded, modal } = useApp();
+  const { currentView, loaded, modal, undoStack, undo } = useApp();
 
   if (!loaded) {
     return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text2)', fontSize: 14 }}>loading…</div>;
@@ -83,6 +83,15 @@ export default function App() {
       {modal?.type === 'parts-box-check' && <PartsBoxCheckModal />}
 
       <BackToTop />
+      {undoStack.length > 0 && (
+        <button
+          onClick={undo}
+          style={{ position: 'fixed', bottom: 64, right: 16, zIndex: 9000, background: 'var(--bg2)', border: '0.5px solid var(--border2)', borderRadius: 'var(--radius)', padding: '8px 16px', fontSize: 13, color: 'var(--text)', cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,.15)', fontFamily: 'inherit' }}
+          title={`Undo: ${undoStack[undoStack.length - 1]?.label}`}
+        >
+          ↩ Undo {undoStack[undoStack.length - 1]?.label}
+        </button>
+      )}
     </>
   );
 }

@@ -186,7 +186,8 @@ let products = {};
 let pendingInventory = []; // synthetic entries for queue/planning products — never saved to server
 let expandedId = null;
 let logQty = 1;
-let selectedDest = 'store';
+let selectedDest = null; // set after first data load
+let outgoingDests = ['store', 'markets', 'website']; // updated from server
 let outgoingCollapsed = new Set();
 let historyCollapsed = new Set();
 let appMode = 'inventory'; // 'inventory' | 'stocktake'
@@ -201,6 +202,10 @@ async function reload() {
     inventory = data.inventory || [];
     parts     = data.parts     || [];
     products  = data.products  || {};
+    if (Array.isArray(data._outgoingDests) && data._outgoingDests.length) {
+      outgoingDests = data._outgoingDests;
+    }
+    if (!selectedDest || !outgoingDests.includes(selectedDest)) selectedDest = outgoingDests[0];
     document.getElementById('last-sync').textContent = 'updated ' + new Date().toLocaleTimeString();
     if (appMode === 'stocktake') renderStocktake();
     else renderList();
@@ -391,8 +396,8 @@ function calcOnHand(item) {
 
 function renderDetail(item, onHand) {
   const totalOut = (item.distributions||[]).reduce((a,d) => a + (d.qty||0), 0);
-  const byDest = { store:0, markets:0, website:0 };
-  (item.distributions||[]).forEach(d => { if (byDest[d.dest]!==undefined) byDest[d.dest] += d.qty||0; });
+  const byDest = {};
+  (item.distributions||[]).forEach(d => { byDest[d.dest] = (byDest[d.dest]||0) + (d.qty||0); });
 
   const histRows = (item.distributions||[]).slice().reverse().map((d,i) => `
     <div class="dist-item">
@@ -443,9 +448,7 @@ function renderDetail(item, onHand) {
       </div>
       <div id="outgoing-body-${esc(item.id)}" style="display:${outgoingCollapsed.has(item.id)?'none':'block'}">
         <div class="dest-btns">
-          <button class="dest-btn ${selectedDest==='store'?'active':''}" onclick="selectDest('store')"><span class="dest-icon">🏪</span>store</button>
-          <button class="dest-btn ${selectedDest==='markets'?'active':''}" onclick="selectDest('markets')"><span class="dest-icon">⛺</span>markets</button>
-          <button class="dest-btn ${selectedDest==='website'?'active':''}" onclick="selectDest('website')"><span class="dest-icon">🌐</span>website</button>
+          ${outgoingDests.map(d => `<button class="dest-btn ${selectedDest===d?'active':''}" onclick="selectDest(${js(d)})">${esc(d)}</button>`).join('')}
         </div>
         <div class="log-row">
           <div class="log-qty-ctrl">

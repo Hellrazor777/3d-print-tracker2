@@ -175,10 +175,12 @@ export function AppProvider({ children }) {
       cleanupInventoryListener = window.electronAPI.onInventoryUpdated(onInventoryUpdated);
     }
 
-    // Listen for printer status updates from main process
+    // Listen for printer status updates from main process (Electron) or SSE (web)
     let cleanupPrinterUpdate = null;
     let cleanupBambuConn = null;
     let cleanupBambuToken = null;
+    let sseSource = null;
+
     if (window.electronAPI?.onPrinterUpdate) {
       cleanupPrinterUpdate = window.electronAPI.onPrinterUpdate((_, { serial, id, state }) => {
         const key = serial || id;
@@ -192,6 +194,21 @@ export function AppProvider({ children }) {
         setAppSettings(prev => { next = { ...prev, bambuAuth: { ...prev.bambuAuth, ...auth } }; return next; });
         if (next) saveSettingsStorage(next);
       });
+    } else {
+      // Web mode: use SSE to keep printerStatus and bambuConn in sync with the server
+      sseSource = new EventSource(`${API_BASE}/api/printers/events`);
+      sseSource.addEventListener('printer-update', e => {
+        try {
+          const { serial, state } = JSON.parse(e.data);
+          if (serial) setPrinterStatus(prev => ({ ...prev, [serial]: state }));
+        } catch {}
+      });
+      sseSource.addEventListener('bambu-conn', e => {
+        try { setBambuConn(JSON.parse(e.data) || { connected: false }); } catch {}
+      });
+      sseSource.addEventListener('devices', e => {
+        // devices list update — PrintersView handles its own copy; nothing needed here
+      });
     }
 
     return () => {
@@ -199,6 +216,7 @@ export function AppProvider({ children }) {
       if (typeof cleanupPrinterUpdate === 'function') cleanupPrinterUpdate();
       if (typeof cleanupBambuConn === 'function') cleanupBambuConn();
       if (typeof cleanupBambuToken === 'function') cleanupBambuToken();
+      if (sseSource) sseSource.close();
     };
   }, []);
 

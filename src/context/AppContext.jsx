@@ -84,6 +84,8 @@ export function AppProvider({ children }) {
   useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
   useEffect(() => { catExpandedRef.current = catExpanded; }, [catExpanded]);
   useEffect(() => { filamentsRef.current = filaments; }, [filaments]);
+  const nextIdRef = useRef(nextId);
+  useEffect(() => { nextIdRef.current = nextId; }, [nextId]);
 
   // ── Theme ──
   function applyTheme(theme) {
@@ -155,11 +157,9 @@ export function AppProvider({ children }) {
         setBambuConn(status || { connected: false });
       });
       cleanupBambuToken = window.electronAPI.onBambuTokenRefreshed((_, { auth }) => {
-        setAppSettings(prev => {
-          const next = { ...prev, bambuAuth: { ...prev.bambuAuth, ...auth } };
-          saveSettingsStorage(next);
-          return next;
-        });
+        let next;
+        setAppSettings(prev => { next = { ...prev, bambuAuth: { ...prev.bambuAuth, ...auth } }; return next; });
+        if (next) saveSettingsStorage(next);
       });
     }
 
@@ -170,6 +170,12 @@ export function AppProvider({ children }) {
       if (typeof cleanupBambuToken === 'function') cleanupBambuToken();
     };
   }, []);
+
+  // ── Central persistence — fires after every committed state change ──
+  useEffect(() => {
+    if (!loaded) return;
+    saveData({ parts, products, inventory, filaments, expandedCats: [...catExpanded] });
+  }, [parts, products, inventory, filaments, catExpanded, loaded]);
 
   // ── Settings helpers ──
   const getCategoryOrder = useCallback(() => {
@@ -260,73 +266,55 @@ export function AppProvider({ children }) {
   const closeModal = useCallback(() => setModal(null), []);
 
   // ── Part CRUD ──
-  const adjustQty = useCallback(async (id, delta) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.id !== id) return p;
-        const printed = delta > 0 ? Math.min(p.printed + 1, p.qty) : Math.max(p.printed - 1, 0);
-        const status = printed === p.qty && delta > 0 ? 'done' : p.status;
-        return { ...p, printed, status };
-      });
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const adjustQty = useCallback((id, delta) => {
+    setParts(prev => prev.map(p => {
+      if (p.id !== id) return p;
+      const printed = delta > 0 ? Math.min(p.printed + 1, p.qty) : Math.max(p.printed - 1, 0);
+      const status = printed === p.qty && delta > 0 ? 'done' : p.status;
+      return { ...p, printed, status };
+    }));
   }, []);
 
-  const reprint = useCallback(async (id) => {
-    let newParts;
-    setParts(prev => {
-      const p = prev.find(x => x.id === id);
-      if (!p) return prev;
-      const reprintedP = { ...p, reprints: (p.reprints || 0) + 1 };
-      const newEntry = { ...p, id: nextId, printed: 0, status: 'queue', reprints: 0 };
-      setNextId(n => n + 1);
-      newParts = prev.map(x => x.id === id ? reprintedP : x).concat(newEntry);
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-  }, [nextId]);
-
-  const deletePart = useCallback(async (id) => {
-    let newParts;
-    setParts(prev => { newParts = prev.filter(p => p.id !== id); return newParts; });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const reprint = useCallback((id) => {
+    const p = partsRef.current.find(x => x.id === id);
+    if (!p) return;
+    const reprintedP = { ...p, reprints: (p.reprints || 0) + 1 };
+    const newEntry = { ...p, id: nextIdRef.current, printed: 0, status: 'queue', reprints: 0 };
+    setParts(prev => prev.map(x => x.id === id ? reprintedP : x).concat(newEntry));
+    setNextId(n => n + 1);
   }, []);
 
-  const saveCard = useCallback(async (formData, editId) => {
+  const deletePart = useCallback((id) => {
+    setParts(prev => prev.filter(p => p.id !== id));
+  }, []);
+
+  const saveCard = useCallback((formData, editId) => {
     const { name, item, variant, colours, qty, status } = formData;
     const colour = colours[0]?.hex || '#888888';
     const colourName = colours[0]?.name || '';
-    let newParts, newProducts;
+    const isNew = !editId;
     setParts(prev => {
       if (editId) {
-        newParts = prev.map(p => {
+        return prev.map(p => {
           if (p.id !== editId) return p;
           return { ...p, name, item, variant, colours, colour, colourName, qty, status, printed: Math.min(p.printed, qty) };
         });
-      } else {
-        const newPart = { id: nextId, name, item, variant, colours, colour, colourName, qty, status, printed: 0, reprints: 0, desc: '' };
-        setNextId(n => n + 1);
-        newParts = [...prev, newPart];
       }
-      return newParts;
+      return [...prev, { id: nextIdRef.current, name, item, variant, colours, colour, colourName, qty, status, printed: 0, reprints: 0, desc: '' }];
     });
+    if (isNew) setNextId(n => n + 1);
     setProducts(prev => {
-      newProducts = { ...prev };
-      if (item && !newProducts[item]) {
-        newProducts[item] = { category: '' };
+      const next = { ...prev };
+      if (item && !next[item]) {
+        next[item] = { category: '' };
         if (window.electronAPI?.createProductFolder && appSettings.threeMfFolder) {
           window.electronAPI.createProductFolder(item, appSettings.threeMfFolder).catch(() => {});
         }
       }
-      return newProducts;
+      return next;
     });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
     closeModal();
-  }, [nextId, appSettings.threeMfFolder, closeModal]);
+  }, [appSettings.threeMfFolder, closeModal]);
 
   const setPartStatus = useCallback(async (partId, newStatus) => {
     // Record the product this part belongs to so ProductView can scroll to it after re-render
@@ -362,177 +350,106 @@ export function AppProvider({ children }) {
         setOpenProducts(prev => { const next = new Set(prev); next.add(part.item); return next; });
       }
     }
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, []);
 
-  const setSubPartStatus = useCallback(async (partId, subIdx, newStatus) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.id !== partId) return p;
-        const subParts = p.subParts ? [...p.subParts] : [];
-        subParts[subIdx] = { ...subParts[subIdx], status: newStatus };
-        let { printed, status } = p;
-        if (newStatus === 'done') {
-          if (subParts.every(s => s.status === 'done')) { status = 'done'; printed = p.qty; }
-        } else {
-          if (p.status === 'done') { status = 'printing'; printed = subParts.filter(s => s.status === 'done').length; }
-        }
-        return { ...p, subParts, status, printed };
-      });
-      return newParts;
-    });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
-  }, []);
-
-  const adjustSubPrinted = useCallback(async (partId, subIdx, delta) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.id !== partId) return p;
-        const subParts = [...(p.subParts || [])];
-        const sp = { ...subParts[subIdx] };
-        sp.printed = Math.max(0, Math.min(sp.qty || 1, (sp.printed || 0) + delta));
-        if (sp.printed >= (sp.qty || 1)) sp.status = 'done';
-        else if (sp.status === 'done') sp.status = 'printing';
-        subParts[subIdx] = sp;
-        let { status, printed } = p;
+  const setSubPartStatus = useCallback((partId, subIdx, newStatus) => {
+    setParts(prev => prev.map(p => {
+      if (p.id !== partId) return p;
+      const subParts = p.subParts ? [...p.subParts] : [];
+      subParts[subIdx] = { ...subParts[subIdx], status: newStatus };
+      let { printed, status } = p;
+      if (newStatus === 'done') {
         if (subParts.every(s => s.status === 'done')) { status = 'done'; printed = p.qty; }
-        else if (p.status === 'done') { status = 'printing'; }
-        return { ...p, subParts, status, printed };
-      });
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+      } else {
+        if (p.status === 'done') { status = 'printing'; printed = subParts.filter(s => s.status === 'done').length; }
+      }
+      return { ...p, subParts, status, printed };
+    }));
   }, []);
 
-  const addSubPart = useCallback(async (partId, name, qty) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.id !== partId) return p;
-        const subParts = [...(p.subParts || []), { name, qty, printed: 0, status: 'queue' }];
-        const status = p.status === 'done' ? 'queue' : p.status;
-        const printed = p.status === 'done' ? 0 : p.printed;
-        return { ...p, subParts, status, printed };
-      });
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const adjustSubPrinted = useCallback((partId, subIdx, delta) => {
+    setParts(prev => prev.map(p => {
+      if (p.id !== partId) return p;
+      const subParts = [...(p.subParts || [])];
+      const sp = { ...subParts[subIdx] };
+      sp.printed = Math.max(0, Math.min(sp.qty || 1, (sp.printed || 0) + delta));
+      if (sp.printed >= (sp.qty || 1)) sp.status = 'done';
+      else if (sp.status === 'done') sp.status = 'printing';
+      subParts[subIdx] = sp;
+      let { status, printed } = p;
+      if (subParts.every(s => s.status === 'done')) { status = 'done'; printed = p.qty; }
+      else if (p.status === 'done') { status = 'printing'; }
+      return { ...p, subParts, status, printed };
+    }));
   }, []);
 
-  const deleteSubPart = useCallback(async (partId, subIdx) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.id !== partId) return p;
-        const subParts = (p.subParts || []).filter((_, i) => i !== subIdx);
-        return { ...p, subParts };
-      });
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const addSubPart = useCallback((partId, name, qty) => {
+    setParts(prev => prev.map(p => {
+      if (p.id !== partId) return p;
+      const subParts = [...(p.subParts || []), { name, qty, printed: 0, status: 'queue' }];
+      const status = p.status === 'done' ? 'queue' : p.status;
+      const printed = p.status === 'done' ? 0 : p.printed;
+      return { ...p, subParts, status, printed };
+    }));
+  }, []);
+
+  const deleteSubPart = useCallback((partId, subIdx) => {
+    setParts(prev => prev.map(p => {
+      if (p.id !== partId) return p;
+      return { ...p, subParts: (p.subParts || []).filter((_, i) => i !== subIdx) };
+    }));
   }, []);
 
   // ── Product CRUD ──
-  const saveManageProduct = useCallback(async ({ oldName, newName, category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxEnabled, partsBox }) => {
-    let newParts, newProducts;
-    setParts(prev => {
-      newParts = prev.map(p => p.item === oldName ? { ...p, item: newName } : p);
-      return newParts;
-    });
+  const saveManageProduct = useCallback(({ oldName, newName, category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxEnabled, partsBox }) => {
+    setParts(prev => prev.map(p => p.item === oldName ? { ...p, item: newName } : p));
     setProducts(prev => {
       const oldMeta = prev[oldName] || {};
-      newProducts = { ...prev };
-      delete newProducts[oldName];
-      newProducts[newName] = { ...oldMeta, category, description, shiny, n3dUrl: n3dUrl || oldMeta.n3dUrl || '', designer, source, imagePath: imagePath !== undefined ? imagePath : (oldMeta.imagePath || ''), partsBoxEnabled: !!partsBoxEnabled, partsBox: partsBoxEnabled ? (partsBox || '') : '' };
-      return newProducts;
+      const next = { ...prev };
+      delete next[oldName];
+      next[newName] = { ...oldMeta, category, description, shiny, n3dUrl: n3dUrl || oldMeta.n3dUrl || '', designer, source, imagePath: imagePath !== undefined ? imagePath : (oldMeta.imagePath || ''), partsBoxEnabled: !!partsBoxEnabled, partsBox: partsBoxEnabled ? (partsBox || '') : '' };
+      return next;
     });
     setOpenProducts(prev => {
       const next = new Set(prev);
       if (next.has(oldName)) { next.delete(oldName); next.add(newName); }
       return next;
     });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
     closeModal();
   }, [closeModal]);
 
-  const deleteProductPermanently = useCallback(async (name) => {
-    let newParts, newProducts;
-    setParts(prev => { newParts = prev.filter(p => p.item !== name); return newParts; });
-    setProducts(prev => { newProducts = { ...prev }; delete newProducts[name]; return newProducts; });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
+  const deleteProductPermanently = useCallback((name) => {
+    setParts(prev => prev.filter(p => p.item !== name));
+    setProducts(prev => { const next = { ...prev }; delete next[name]; return next; });
     closeModal();
   }, [closeModal]);
 
-  const archiveProduct = useCallback(async (name) => {
-    let newProducts;
-    setProducts(prev => {
-      newProducts = { ...prev, [name]: { ...(prev[name] || {}), archived: true } };
-      return newProducts;
-    });
-    await saveData({ parts: partsRef.current, products: newProducts, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const archiveProduct = useCallback((name) => {
+    setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: true } }));
   }, []);
 
-  const unarchiveProduct = useCallback(async (name) => {
-    let newProducts;
-    setProducts(prev => {
-      newProducts = { ...prev, [name]: { ...(prev[name] || {}), archived: false } };
-      return newProducts;
-    });
-    await saveData({ parts: partsRef.current, products: newProducts, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const unarchiveProduct = useCallback((name) => {
+    setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: false } }));
   }, []);
 
-  const restartProduct = useCallback(async (name) => {
-    let newParts, newProducts;
-    setParts(prev => {
-      newParts = prev.map(p => {
-        if (p.item !== name) return p;
-        const subParts = p.subParts ? p.subParts.map(s => ({ ...s, status: 'queue', printed: 0 })) : p.subParts;
-        return { ...p, status: 'queue', printed: 0, reprints: 0, subParts };
-      });
-      return newParts;
-    });
-    setProducts(prev => {
-      newProducts = { ...prev, [name]: { ...(prev[name] || {}), archived: false } };
-      return newProducts;
-    });
+  const restartProduct = useCallback((name) => {
+    setParts(prev => prev.map(p => {
+      if (p.item !== name) return p;
+      const subParts = p.subParts ? p.subParts.map(s => ({ ...s, status: 'queue', printed: 0 })) : p.subParts;
+      return { ...p, status: 'queue', printed: 0, reprints: 0, subParts };
+    }));
+    setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), archived: false } }));
     setCurrentView('product');
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, []);
 
-  const saveAddProduct = useCallback(async ({ name, category, description, shiny, designer, source, imagePath }) => {
-    let newProducts;
-    setProducts(prev => {
-      newProducts = { ...prev, [name]: { category: category || '', description: description || '', shiny: !!shiny, designer: designer || '', source: source || '', imagePath: imagePath || '' } };
-      return newProducts;
-    });
+  const saveAddProduct = useCallback(({ name, category, description, shiny, designer, source, imagePath }) => {
+    setProducts(prev => ({ ...prev, [name]: { category: category || '', description: description || '', shiny: !!shiny, designer: designer || '', source: source || '', imagePath: imagePath || '' } }));
     setOpenProducts(prev => { const next = new Set(prev); next.add(name); return next; });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
     closeModal();
   }, [closeModal]);
 
-  const togglePreSliced = useCallback(async (name) => {
-    let newProducts;
-    setProducts(prev => {
-      newProducts = { ...prev, [name]: { ...(prev[name] || {}), preSliced: !(prev[name]?.preSliced) } };
-      return newProducts;
-    });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
+  const togglePreSliced = useCallback((name) => {
+    setProducts(prev => ({ ...prev, [name]: { ...(prev[name] || {}), preSliced: !(prev[name]?.preSliced) } }));
   }, []);
 
   // ── Inventory ──
@@ -584,22 +501,14 @@ export function AppProvider({ children }) {
       }
       return newInventory;
     });
-    let newProducts;
-    setProducts(prev => {
-      newProducts = { ...prev, [productName]: { ...(prev[productName] || {}), archived: true } };
-      return newProducts;
-    });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
+    setProducts(prev => ({ ...prev, [productName]: { ...(prev[productName] || {}), archived: true } }));
     closeModal();
   }, [closeModal, getStorageLocations, syncStorageLocs]);
 
-  const confirmQuickAdd = useCallback(async (productName, qty, locations) => {
-    let newInventory;
+  const confirmQuickAdd = useCallback((productName, qty, locations) => {
     setInventory(prev => {
-      newInventory = [...prev];
-      const existing = newInventory.find(i => i.name === productName);
+      const next = [...prev];
+      const existing = next.find(i => i.name === productName);
       const locs = Object.keys(locations);
       if (existing) {
         existing.built = (existing.built || 0) + qty;
@@ -608,147 +517,104 @@ export function AppProvider({ children }) {
       } else {
         const storage = {};
         locs.forEach(loc => { storage[loc] = locations[loc] || 0; });
-        newInventory.push({ id: 'inv_' + Date.now(), name: productName, category: productsRef.current[productName]?.category || '', built: qty, location: '', storage, distributions: [], source: 'tracker' });
+        next.push({ id: 'inv_' + Date.now(), name: productName, category: productsRef.current[productName]?.category || '', built: qty, location: '', storage, distributions: [], source: 'tracker' });
       }
-      return newInventory;
+      return next;
     });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
     closeModal();
   }, [closeModal]);
 
-  const invAdjustBuilt = useCallback(async (id, delta) => {
+  const invAdjustBuilt = useCallback((id, delta) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const updated = { ...item, built: Math.max(0, (item.built || 0) + delta) };
-        updated.storage = syncStorageLocs(updated, locs);
-        return updated;
-      });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated = { ...item, built: Math.max(0, (item.built || 0) + delta) };
+      updated.storage = syncStorageLocs(updated, locs);
+      return updated;
+    }));
   }, [getStorageLocations, syncStorageLocs]);
 
-  const invSetBuilt = useCallback(async (id, val) => {
+  const invSetBuilt = useCallback((id, val) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const updated = { ...item, built: Math.max(0, val) };
-        updated.storage = syncStorageLocs(updated, locs);
-        return updated;
-      });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const updated = { ...item, built: Math.max(0, val) };
+      updated.storage = syncStorageLocs(updated, locs);
+      return updated;
+    }));
   }, [getStorageLocations, syncStorageLocs]);
 
-  const invAdjustLocation = useCallback(async (id, loc, delta) => {
+  const invAdjustLocation = useCallback((id, loc, delta) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const storage = { ...item.storage };
-        const onHand = invOnHand(item);
-        storage[loc] = Math.max(0, Math.min(onHand, (storage[loc] || 0) + delta));
-        const others = locs.filter(l => l !== loc);
-        const remaining = Math.max(0, onHand - storage[loc]);
-        if (others.length === 1) storage[others[0]] = remaining;
-        return { ...item, storage };
-      });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const storage = { ...item.storage };
+      const onHand = invOnHand(item);
+      storage[loc] = Math.max(0, Math.min(onHand, (storage[loc] || 0) + delta));
+      const others = locs.filter(l => l !== loc);
+      const remaining = Math.max(0, onHand - storage[loc]);
+      if (others.length === 1) storage[others[0]] = remaining;
+      return { ...item, storage };
+    }));
   }, [getStorageLocations, invOnHand]);
 
-  const invSetLocation = useCallback(async (id, loc, val) => {
+  const invSetLocation = useCallback((id, loc, val) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const onHand = invOnHand(item);
-        const storage = { ...item.storage };
-        storage[loc] = Math.max(0, Math.min(onHand, val));
-        const others = locs.filter(l => l !== loc);
-        const remaining = Math.max(0, onHand - storage[loc]);
-        if (others.length === 1) storage[others[0]] = remaining;
-        return { ...item, storage };
-      });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const onHand = invOnHand(item);
+      const storage = { ...item.storage };
+      storage[loc] = Math.max(0, Math.min(onHand, val));
+      const others = locs.filter(l => l !== loc);
+      const remaining = Math.max(0, onHand - storage[loc]);
+      if (others.length === 1) storage[others[0]] = remaining;
+      return { ...item, storage };
+    }));
   }, [getStorageLocations, invOnHand]);
 
-  const invSetLabel = useCallback(async (id, label) => {
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => item.id !== id ? item : { ...item, location: label });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const invSetLabel = useCallback((id, label) => {
+    setInventory(prev => prev.map(item => item.id !== id ? item : { ...item, location: label }));
   }, []);
 
-  const invLogDist = useCallback(async (id, dest, qty, note) => {
+  const invLogDist = useCallback((id, dest, qty, note) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const storage = { ...item.storage };
-        let remaining = qty;
-        locs.forEach(loc => {
-          if (remaining <= 0) return;
-          const cur = storage[loc] || 0;
-          const take = Math.min(cur, remaining);
-          storage[loc] = cur - take;
-          remaining -= take;
-        });
-        const distributions = [...(item.distributions || []), { dest, qty, note, date: new Date().toISOString() }];
-        return { ...item, storage, distributions };
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const storage = { ...item.storage };
+      let remaining = qty;
+      locs.forEach(loc => {
+        if (remaining <= 0) return;
+        const cur = storage[loc] || 0;
+        const take = Math.min(cur, remaining);
+        storage[loc] = cur - take;
+        remaining -= take;
       });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+      const distributions = [...(item.distributions || []), { dest, qty, note, date: new Date().toISOString() }];
+      return { ...item, storage, distributions };
+    }));
   }, [getStorageLocations]);
 
-  const removeDistribution = useCallback(async (id, idx) => {
+  const removeDistribution = useCallback((id, idx) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        if (item.id !== id) return item;
-        const distributions = (item.distributions || []).filter((_, i) => i !== idx);
-        const updated = { ...item, distributions };
-        updated.storage = syncStorageLocs(updated, locs);
-        return updated;
-      });
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => prev.map(item => {
+      if (item.id !== id) return item;
+      const distributions = (item.distributions || []).filter((_, i) => i !== idx);
+      const updated = { ...item, distributions };
+      updated.storage = syncStorageLocs(updated, locs);
+      return updated;
+    }));
   }, [getStorageLocations, syncStorageLocs]);
 
-  const invDeleteItem = useCallback(async (id) => {
-    let newInventory;
-    setInventory(prev => { newInventory = prev.filter(i => i.id !== id); return newInventory; });
+  const invDeleteItem = useCallback((id) => {
+    setInventory(prev => prev.filter(i => i.id !== id));
     setInvExpanded(prev => { const next = new Set(prev); next.delete(id); return next; });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
   }, []);
 
-  const addInventoryManual = useCallback(async (name, qty, cat) => {
+  const addInventoryManual = useCallback((name, qty, cat) => {
     const locs = getStorageLocations();
     const storage = {};
     locs.forEach((loc, i) => { storage[loc] = i === locs.length - 1 ? qty : 0; });
-    let newInventory;
-    setInventory(prev => {
-      newInventory = [...prev, { id: 'inv_' + Date.now(), name, category: cat, built: qty, location: '', storage, distributions: [], source: 'manual' }];
-      return newInventory;
-    });
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: newInventory, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+    setInventory(prev => [...prev, { id: 'inv_' + Date.now(), name, category: cat, built: qty, location: '', storage, distributions: [], source: 'manual' }]);
     closeModal();
   }, [getStorageLocations, closeModal]);
 
@@ -761,19 +627,15 @@ export function AppProvider({ children }) {
 
   // ── Printer helpers ──
   const saveBambuAuth = useCallback(async (auth) => {
-    setAppSettings(prev => {
-      const next = { ...prev, bambuAuth: auth };
-      saveSettingsStorage(next);
-      return next;
-    });
+    let next;
+    setAppSettings(prev => { next = { ...prev, bambuAuth: auth }; return next; });
+    if (next) await saveSettingsStorage(next);
   }, []);
 
   const saveSnapmakerPrinters = useCallback(async (printers) => {
-    setAppSettings(prev => {
-      const next = { ...prev, printers };
-      saveSettingsStorage(next);
-      return next;
-    });
+    let next;
+    setAppSettings(prev => { next = { ...prev, printers }; return next; });
+    if (next) await saveSettingsStorage(next);
   }, []);
 
   const addCategory = useCallback(async (name) => {
@@ -799,17 +661,10 @@ export function AppProvider({ children }) {
     };
     setAppSettings(newSettings);
     await saveSettingsStorage(newSettings);
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, [appSettings]);
 
   const renameCategory = useCallback(async (oldName, newName) => {
-    let newProducts;
-    setProducts(prev => {
-      newProducts = Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, v.category === oldName ? { ...v, category: newName } : v]));
-      return newProducts;
-    });
+    setProducts(prev => Object.fromEntries(Object.entries(prev).map(([k, v]) => [k, v.category === oldName ? { ...v, category: newName } : v])));
     const newSettings = {
       ...appSettings,
       extraCategories: (appSettings.extraCategories || []).map(c => c === oldName ? newName : c),
@@ -817,9 +672,6 @@ export function AppProvider({ children }) {
     };
     setAppSettings(newSettings);
     await saveSettingsStorage(newSettings);
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, [appSettings]);
 
   const moveCategoryOrder = useCallback(async (name, dir) => {
@@ -838,40 +690,26 @@ export function AppProvider({ children }) {
   const addStorageLocation = useCallback(async (name) => {
     const locs = getStorageLocations();
     if (locs.includes(name)) return;
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        const storage = { ...item.storage };
-        if (storage[name] === undefined) storage[name] = 0;
-        return { ...item, storage };
-      });
-      return newInventory;
-    });
+    setInventory(prev => prev.map(item => {
+      const storage = { ...item.storage };
+      if (storage[name] === undefined) storage[name] = 0;
+      return { ...item, storage };
+    }));
     const newSettings = { ...appSettings, storageLocations: [...locs, name] };
     setAppSettings(newSettings);
     await saveSettingsStorage(newSettings);
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, [appSettings, getStorageLocations]);
 
   const removeStorageLocation = useCallback(async (name) => {
     const locs = getStorageLocations();
-    let newInventory;
-    setInventory(prev => {
-      newInventory = prev.map(item => {
-        const storage = { ...item.storage };
-        delete storage[name];
-        return { ...item, storage };
-      });
-      return newInventory;
-    });
+    setInventory(prev => prev.map(item => {
+      const storage = { ...item.storage };
+      delete storage[name];
+      return { ...item, storage };
+    }));
     const newSettings = { ...appSettings, storageLocations: locs.filter(l => l !== name) };
     setAppSettings(newSettings);
     await saveSettingsStorage(newSettings);
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, [appSettings, getStorageLocations]);
 
   const renameStorageLocation = useCallback(async (oldName, newName) => {
@@ -888,9 +726,6 @@ export function AppProvider({ children }) {
     const newSettings = { ...appSettings, storageLocations: locs.map(l => l === oldName ? newName : l) };
     setAppSettings(newSettings);
     await saveSettingsStorage(newSettings);
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, [appSettings, getStorageLocations]);
 
   const moveStorageLocation = useCallback(async (name, dir) => {
@@ -953,9 +788,6 @@ export function AppProvider({ children }) {
     const path = result?.destPath || result?.path;
     if (path) {
       setProducts(prev => ({ ...prev, [item]: { ...prev[item], imagePath: path } }));
-      setTimeout(async () => {
-        await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-      }, 0);
     }
   }, [appSettings.threeMfFolder]);
 
@@ -982,58 +814,42 @@ export function AppProvider({ children }) {
         const nextFiles = normalized.includes(result.fileName) ? normalized : [...normalized, result.fileName];
         return { ...prev, [item]: { ...(prev[item] || {}), threeMfFiles: nextFiles } };
       });
-      setTimeout(async () => {
-        await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-      }, 0);
       return 1;
     }
     return 0;
   }, [appSettings.threeMfFolder]);
 
   // Merge downloaded 3MF filenames into a product's threeMfFiles list (used after N3D download)
-  const addProduct3mfFiles = useCallback(async (item, fileNames) => {
+  const addProduct3mfFiles = useCallback((item, fileNames) => {
     if (!fileNames?.length) return;
     setProducts(prev => {
       const prevFiles = prev[item]?.threeMfFiles || [];
       const nextFiles = [...new Set([...prevFiles, ...fileNames])];
       return { ...prev, [item]: { ...(prev[item] || {}), threeMfFiles: nextFiles } };
     });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, []);
 
   // Set product image path (used after N3D image download, or any programmatic image update)
-  const setProductImagePath = useCallback(async (item, imagePath) => {
+  const setProductImagePath = useCallback((item, imagePath) => {
     setProducts(prev => ({ ...prev, [item]: { ...prev[item], imagePath } }));
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
   }, []);
 
   // ── Filament library CRUD ──
-  const saveFilaments = useCallback(async (newFilaments) => {
+  const saveFilaments = useCallback((newFilaments) => {
     setFilaments(newFilaments);
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: newFilaments, expandedCats: [...catExpandedRef.current] });
   }, []);
 
-  const addFilament = useCallback(async (f) => {
+  const addFilament = useCallback((f) => {
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    const newF = [...filamentsRef.current, { ...f, id }];
-    setFilaments(newF);
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: newF, expandedCats: [...catExpandedRef.current] });
+    setFilaments(prev => [...prev, { ...f, id }]);
   }, []);
 
-  const updateFilament = useCallback(async (id, updates) => {
-    const newF = filamentsRef.current.map(x => x.id === id ? { ...x, ...updates } : x);
-    setFilaments(newF);
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: newF, expandedCats: [...catExpandedRef.current] });
+  const updateFilament = useCallback((id, updates) => {
+    setFilaments(prev => prev.map(x => x.id === id ? { ...x, ...updates } : x));
   }, []);
 
-  const deleteFilament = useCallback(async (id) => {
-    const newF = filamentsRef.current.filter(x => x.id !== id);
-    setFilaments(newF);
-    await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: newF, expandedCats: [...catExpandedRef.current] });
+  const deleteFilament = useCallback((id) => {
+    setFilaments(prev => prev.filter(x => x.id !== id));
   }, []);
 
   const openExternalUrl = useCallback((url) => {
@@ -1049,23 +865,14 @@ export function AppProvider({ children }) {
   }, []);
 
   // ── Import data (from CSV import flow) ──
-  const importData = useCallback(async (newParts, newProducts) => {
-    let finalParts, finalProducts;
-    setParts(prev => { finalParts = [...prev, ...newParts]; return finalParts; });
-    setProducts(prev => { finalProducts = { ...prev, ...newProducts }; return finalProducts; });
-    setTimeout(async () => {
-      await saveData({ parts: partsRef.current, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
-    }, 0);
+  const importData = useCallback((newParts, newProducts) => {
+    setParts(prev => [...prev, ...newParts]);
+    setProducts(prev => ({ ...prev, ...newProducts }));
   }, []);
 
   // ── Update part qty inline (QtyCell) ──
-  const updatePartQty = useCallback(async (id, qty) => {
-    let newParts;
-    setParts(prev => {
-      newParts = prev.map(p => p.id !== id ? p : { ...p, qty, printed: Math.min(p.printed, qty) });
-      return newParts;
-    });
-    await saveData({ parts: newParts, products: productsRef.current, inventory: inventoryRef.current, filaments: filamentsRef.current, expandedCats: [...catExpandedRef.current] });
+  const updatePartQty = useCallback((id, qty) => {
+    setParts(prev => prev.map(p => p.id !== id ? p : { ...p, qty, printed: Math.min(p.printed, qty) }));
   }, []);
 
   // ── Export CSV ──

@@ -15,21 +15,39 @@ export function localFileUrl(filePath) {
   return 'localfile:///' + p;
 }
 
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) || '';
+
 async function loadData() {
   if (isElectron) return await window.electronAPI.loadData();
-  try { return JSON.parse(localStorage.getItem('3dp_data')); } catch { return null; }
+  try {
+    const r = await fetch(`${API_BASE}/api/data`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
 }
 async function saveData(data) {
   if (isElectron) return await window.electronAPI.saveData(data);
-  localStorage.setItem('3dp_data', JSON.stringify(data));
+  await fetch(`${API_BASE}/api/data`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  }).catch(() => {});
 }
 async function loadSettings() {
   if (isElectron) return await window.electronAPI.loadSettings();
-  try { return JSON.parse(localStorage.getItem('3dp_settings')); } catch { return null; }
+  try {
+    const r = await fetch(`${API_BASE}/api/settings`);
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
 }
 async function saveSettingsStorage(s) {
   if (isElectron) return await window.electronAPI.saveSettings(s);
-  localStorage.setItem('3dp_settings', JSON.stringify(s));
+  await fetch(`${API_BASE}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(s),
+  }).catch(() => {});
 }
 
 const SAMPLE_PARTS = [

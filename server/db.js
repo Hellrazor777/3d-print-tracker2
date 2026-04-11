@@ -48,19 +48,24 @@ let pgPool = null;
 let dbReady = false;   // true once we've decided which backend to use
 
 async function initDB() {
-  if (!process.env.DATABASE_URL) { dbReady = true; return; }
+  if (!process.env.DATABASE_URL) {
+    console.log('[db] DATABASE_URL not set — using local JSON file storage (.local-data.json)');
+    dbReady = true;
+    return;
+  }
   try {
     const { Pool } = require('pg');
     const pool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL.includes('localhost') ? false : true, // Supabase/Render use valid certs
-      connectionTimeoutMillis: 3000,
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+      connectionTimeoutMillis: 5000,
     });
     await pool.query('SELECT 1');
     pgPool = pool;
     usePostgres = true;
-  } catch {
-    console.log('No PostgreSQL — using local JSON file storage (.local-data.json)');
+    console.log('[db] Connected to PostgreSQL (Supabase)');
+  } catch (e) {
+    console.error('[db] PostgreSQL connection failed — falling back to local JSON file storage:', e.message);
   }
   dbReady = true;
 }

@@ -778,8 +778,13 @@ function InlineCameraFeed({ serial, device, storedIp, storedCode, onSaveConfig, 
   const applyConfig = () => {
     if (!ip.trim()) return;
     setEditing(false); setOn(true); setError('');
-    if (isElectron) startEl(ip.trim(), code.trim());
-    else setMjpegKey(k => k + 1);
+    if (isElectron) {
+      startEl(ip.trim(), code.trim());
+    } else {
+      // Persist the IP and access code so they survive a page refresh
+      onSaveConfig(ip.trim(), code.trim());
+      setMjpegKey(k => k + 1);
+    }
   };
 
   return (

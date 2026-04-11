@@ -617,6 +617,158 @@ function streamCamera(ip, accessCode, res, onError) {
   };
 }
 
+// ─── RTSP camera streaming (H2D, H2S, X1C, P2S) ──────────────────────────────
+//
+// These models expose an RTSPS endpoint on port 322 instead of the proprietary
+// binary JPEG protocol on port 6000 used by P1S/P1P.
+// Requires "LAN Only Liveview" enabled on the printer (Settings → Network).
+
+const RTSP_MODEL_RE = /\b(H2D|H2S|X1C|P2S)\b/i;
+
+/**
+ * Returns true if the given model string identifies a printer that uses
+ * RTSPS on port 322 rather than the binary protocol on port 6000.
+ */
+function isRtspPrinter(model) {
+  if (!model) return false;
+  return RTSP_MODEL_RE.test(model);
+}
+
+/**
+ * Locate ffmpeg: check PATH first, then Windows winget install tree.
+ * Returns the executable path string, or null if not found.
+ */
+function findFfmpeg() {
+  const { execFileSync } = require('child_process');
+  const fs   = require('fs');
+  const path = require('path');
+
+  // 1. Try whatever is on PATH (Linux, macOS, manual Windows installs)
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 3000 });
+    return 'ffmpeg';
+  } catch {}
+
+  // 2. Windows winget install directory — search across any installed version
+  if (process.platform === 'win32') {
+    const wingetBase = path.join(
+      process.env.LOCALAPPDATA || '',
+      'Microsoft', 'WinGet', 'Packages'
+    );
+    try {
+      const pkgDirs = fs.readdirSync(wingetBase).filter(d => d.startsWith('Gyan.FFmpeg'));
+      for (const pkgDir of pkgDirs) {
+        const pkgPath = path.join(wingetBase, pkgDir);
+        try {
+          for (const sub of fs.readdirSync(pkgPath)) {
+            const candidate = path.join(pkgPath, sub, 'bin', 'ffmpeg.exe');
+            if (fs.existsSync(candidate)) return candidate;
+          }
+        } catch {}
+        // Flat layout (no version subdirectory)
+        const flat = path.join(pkgPath, 'bin', 'ffmpeg.exe');
+        if (fs.existsSync(flat)) return flat;
+      }
+    } catch {}
+
+    // 3. Common manual Windows install locations
+    for (const candidate of [
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+      path.join(process.env.USERPROFILE || '', 'ffmpeg', 'bin', 'ffmpeg.exe'),
+    ]) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Stream MJPEG frames from a Bambu RTSPS camera (port 322) via ffmpeg.
+ * H2D/H2S/X1C/P2S use H.264 over RTSPS — ffmpeg decodes and re-encodes as MJPEG.
+ * Returns a stop() function.
+ */
+function streamCameraRtsp(ip, accessCode, res, onError) {
+  const { spawn } = require('child_process');
+
+  const ffmpegPath = findFfmpeg();
+  if (!ffmpegPath) {
+    onError('ffmpeg not found. Install it via: winget install Gyan.FFmpeg  (or add ffmpeg to PATH)');
+    return () => {};
+  }
+
+  const rtspUrl = `rtsps://bblp:${accessCode}@${ip}:322/streaming/live/1`;
+
+  const args = [
+    '-rtsp_transport', 'tcp',
+    '-i',             rtspUrl,
+    '-vf',            'fps=10',
+    '-f',             'mjpeg',
+    '-q:v',           '5',
+    'pipe:1',
+  ];
+
+  let active = true;
+  const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+
+  // Parse JPEG frames from ffmpeg stdout by scanning for SOI/EOI markers.
+  // Within JPEG entropy-coded data, 0xFF is always stuffed as 0xFF 0x00 so
+  // a genuine 0xFF 0xD9 (EOI) only appears as the end-of-image marker.
+  const SOI = Buffer.from([0xFF, 0xD8]);
+  const EOI = Buffer.from([0xFF, 0xD9]);
+  let buf = Buffer.alloc(0);
+
+  proc.stdout.on('data', (chunk) => {
+    if (!active) return;
+    buf = Buffer.concat([buf, chunk]);
+
+    let searchFrom = 0;
+    while (true) {
+      const soiIdx = buf.indexOf(SOI, searchFrom);
+      if (soiIdx === -1) break;
+      const eoiIdx = buf.indexOf(EOI, soiIdx + 2);
+      if (eoiIdx === -1) break;
+
+      const frame = buf.slice(soiIdx, eoiIdx + 2);
+      searchFrom = eoiIdx + 2;
+
+      try {
+        res.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`);
+        res.write(frame);
+        res.write('\r\n');
+      } catch {
+        active = false;
+        try { proc.kill(); } catch {}
+        return;
+      }
+    }
+
+    // Retain only unprocessed data (from the last SOI onward)
+    if (searchFrom > 0) {
+      const nextSoi = buf.indexOf(SOI, searchFrom);
+      buf = nextSoi >= 0 ? buf.slice(nextSoi) : Buffer.alloc(0);
+    }
+    // Guard against pathological growth
+    if (buf.length > 4 * 1024 * 1024) buf = Buffer.alloc(0);
+  });
+
+  proc.on('error', (err) => {
+    if (active) onError(err.message);
+    active = false;
+  });
+
+  proc.on('close', (code) => {
+    if (active) onError(`ffmpeg exited (code ${code})`);
+    active = false;
+  });
+
+  return () => {
+    active = false;
+    try { proc.kill(); } catch {}
+  };
+}
+
 // Return the best-known local IP for a serial: UDP discovery first, then device list
 function getDiscoveredIp(serial) {
   // Prefer UDP-discovered IP (proved it's on the LAN and recently seen)
@@ -652,7 +804,9 @@ module.exports = {
   requestBambuStatus,
   prepareAuth,
   getState,
+  isRtspPrinter,
   streamCamera,
+  streamCameraRtsp,
   bambuGetCameraCreds,
   getDiscoveredIp,
   get discoveredPrinters() { return discoveredPrinters; },

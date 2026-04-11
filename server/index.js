@@ -1,6 +1,7 @@
+const http    = require('http');
 const express = require('express');
-const cors = require('cors');
-const path = require('path');
+const cors    = require('cors');
+const path    = require('path');
 const { getData, saveData, saveSettings, updateInventoryItem } = require('./db');
 const printers = require('./printers');
 const cameraRelay = require('./camera-relay');
@@ -440,7 +441,17 @@ app.get('/api/printers/camera/:serial', (req, res) => {
 
   let stopped = false;
 
-  const stop = printers.streamCamera(ip, code, res, (errMsg) => {
+  // H2D, H2S, X1C, P2S use RTSPS on port 322 (via ffmpeg).
+  // P1S/P1P use the proprietary binary protocol on port 6000.
+  const discovered = printers.discoveredPrinters[serial];
+  const devInfo = (printers.bambuDevices || []).find(d => d.dev_id === serial);
+  const model = discovered?.model || devInfo?.dev_product_name || devInfo?.dev_model_name || '';
+
+  const streamFn = printers.isRtspPrinter(model)
+    ? printers.streamCameraRtsp
+    : printers.streamCamera;
+
+  const stop = streamFn(ip, code, res, (errMsg) => {
     if (!stopped) {
       stopped = true;
       try {
@@ -478,7 +489,11 @@ if (process.env.NODE_ENV === 'production') {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1';
-const server = app.listen(PORT, HOST, async () => {
+// Use http.createServer() rather than app.listen() so the event loop handle
+// is held by the http.Server instance — required for Node v24+ where
+// app.listen() drops its handle and the process exits prematurely.
+const server = http.createServer(app);
+server.listen(PORT, HOST, async () => {
   console.log(`API server running on http://${HOST}:${PORT}`);
 
   // Attach camera relay WebSocket server to the same HTTP server.

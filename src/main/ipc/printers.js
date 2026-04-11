@@ -668,6 +668,65 @@ function stopSnapPoll(id) {
   if (snapPollers[id]) { clearInterval(snapPollers[id]); delete snapPollers[id]; }
 }
 
+// ─── RTSP model detection & ffmpeg locator ───────────────────────────────────
+
+const RTSP_MODEL_RE = /\b(H2D|H2S|X1C|P2S)\b/i;
+
+/**
+ * Returns true if the printer model uses RTSPS on port 322 (H2D, H2S, X1C, P2S).
+ * P1S/P1P use the proprietary binary protocol on port 6000.
+ */
+function isRtspPrinter(model) {
+  if (!model) return false;
+  return RTSP_MODEL_RE.test(model);
+}
+
+/**
+ * Locate ffmpeg: tries PATH first, then the Windows winget install tree.
+ * Returns the executable path string, or null if not found.
+ */
+function findFfmpeg() {
+  const { execFileSync } = require('child_process');
+  const fs   = require('fs');
+  const path = require('path');
+
+  try {
+    execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 3000 });
+    return 'ffmpeg';
+  } catch {}
+
+  if (process.platform === 'win32') {
+    const wingetBase = path.join(
+      process.env.LOCALAPPDATA || '',
+      'Microsoft', 'WinGet', 'Packages'
+    );
+    try {
+      const pkgDirs = fs.readdirSync(wingetBase).filter(d => d.startsWith('Gyan.FFmpeg'));
+      for (const pkgDir of pkgDirs) {
+        const pkgPath = path.join(wingetBase, pkgDir);
+        try {
+          for (const sub of fs.readdirSync(pkgPath)) {
+            const candidate = path.join(pkgPath, sub, 'bin', 'ffmpeg.exe');
+            if (fs.existsSync(candidate)) return candidate;
+          }
+        } catch {}
+        const flat = path.join(pkgPath, 'bin', 'ffmpeg.exe');
+        if (fs.existsSync(flat)) return flat;
+      }
+    } catch {}
+
+    for (const candidate of [
+      'C:\\ffmpeg\\bin\\ffmpeg.exe',
+      'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+      path.join(process.env.USERPROFILE || '', 'ffmpeg', 'bin', 'ffmpeg.exe'),
+    ]) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+  }
+
+  return null;
+}
+
 // ─── Bambu camera (JPEG frame stream, port 6000, TLS) ────────────────────────
 //
 // Auth packet format (80 bytes, all little-endian):
@@ -752,11 +811,98 @@ function startCameraStream(serial, ip, accessCode) {
   });
 }
 
+/**
+ * Stream camera from an RTSPS printer (H2D, H2S, X1C, P2S) via ffmpeg.
+ * ffmpeg pulls rtsps://bblp:<code>@<ip>:322/streaming/live/1, re-encodes as
+ * MJPEG on stdout.  Frames are forwarded to the renderer and the cloud relay
+ * exactly like the port-6000 stream, so the rest of the UI is unchanged.
+ * Requires "LAN Only Liveview" enabled on the printer (Settings → Network).
+ */
+function startCameraStreamRtsp(serial, ip, accessCode) {
+  stopCameraStream(serial);
+
+  const { spawn } = require('child_process');
+
+  const ffmpegPath = findFfmpeg();
+  if (!ffmpegPath) {
+    send('printer-camera-frame', {
+      serial,
+      error: 'ffmpeg not found. Install via: winget install Gyan.FFmpeg  (then restart the app)',
+    });
+    return;
+  }
+
+  const rtspUrl = `rtsps://bblp:${accessCode}@${ip}:322/streaming/live/1`;
+
+  const proc = spawn(ffmpegPath, [
+    '-rtsp_transport', 'tcp',
+    '-i',             rtspUrl,
+    '-vf',            'fps=10',
+    '-f',             'mjpeg',
+    '-q:v',           '5',
+    'pipe:1',
+  ], { stdio: ['ignore', 'pipe', 'ignore'] });
+
+  const conn = { proc, active: true };
+  cameraConnections[serial] = conn;
+
+  // Parse MJPEG frames from ffmpeg stdout by scanning for JPEG SOI/EOI markers.
+  const SOI = Buffer.from([0xFF, 0xD8]);
+  const EOI = Buffer.from([0xFF, 0xD9]);
+  let buf = Buffer.alloc(0);
+  let lastSent = 0;
+
+  proc.stdout.on('data', (chunk) => {
+    if (!conn.active) return;
+    buf = Buffer.concat([buf, chunk]);
+
+    let searchFrom = 0;
+    while (true) {
+      const soiIdx = buf.indexOf(SOI, searchFrom);
+      if (soiIdx === -1) break;
+      const eoiIdx = buf.indexOf(EOI, soiIdx + 2);
+      if (eoiIdx === -1) break;
+
+      const frame = buf.slice(soiIdx, eoiIdx + 2);
+      searchFrom = eoiIdx + 2;
+
+      // Rate-limit to ~5 fps (match the port-6000 stream)
+      const now = Date.now();
+      if (now - lastSent < 200) continue;
+      lastSent = now;
+
+      const dataUrl = 'data:image/jpeg;base64,' + frame.toString('base64');
+      send('printer-camera-frame', { serial, dataUrl });
+      sendFrameToRelay(serial, frame);
+    }
+
+    // Retain only unprocessed data
+    if (searchFrom > 0) {
+      const nextSoi = buf.indexOf(SOI, searchFrom);
+      buf = nextSoi >= 0 ? buf.slice(nextSoi) : Buffer.alloc(0);
+    }
+    if (buf.length > 4 * 1024 * 1024) buf = Buffer.alloc(0);
+  });
+
+  proc.on('error', (err) => {
+    send('printer-camera-frame', { serial, error: err.message });
+    stopCameraStream(serial);
+  });
+
+  proc.on('close', (code) => {
+    if (conn.active) {
+      send('printer-camera-frame', { serial, error: `Camera stream ended (ffmpeg exit ${code})` });
+    }
+    delete cameraConnections[serial];
+  });
+}
+
 function stopCameraStream(serial) {
   const conn = cameraConnections[serial];
   if (conn) {
     conn.active = false;
-    try { conn.socket.destroy(); } catch {}
+    try { conn.socket?.destroy(); } catch {}
+    try { conn.proc?.kill(); } catch {}
     delete cameraConnections[serial];
   }
 }
@@ -1283,15 +1429,25 @@ module.exports = function registerPrinterHandlers(ipcMain, win, loadSettings) {
     // no manual LAN configuration is needed — we use what the cloud already gave us.
     let effectiveIp   = ip;
     let effectiveCode = accessCode;
+    const dev = (bambuDevices || []).find(d => d.dev_id === serial);
     if (!effectiveIp) {
-      const dev = (bambuDevices || []).find(d => d.dev_id === serial);
       effectiveIp   = dev?.ip || '';
       effectiveCode = effectiveCode || dev?.dev_access_code || dev?.access_code || '';
     }
     if (!effectiveIp) {
       return { error: 'No IP address found for this printer. Make sure it is online and on your local network.' };
     }
-    try { startCameraStream(serial, effectiveIp, effectiveCode); return { ok: true }; }
+    // H2D, H2S, X1C, P2S use RTSPS on port 322 (via ffmpeg).
+    // P1S/P1P use the proprietary binary protocol on port 6000.
+    const model = dev?.dev_product_name || dev?.name || '';
+    try {
+      if (isRtspPrinter(model)) {
+        startCameraStreamRtsp(serial, effectiveIp, effectiveCode);
+      } else {
+        startCameraStream(serial, effectiveIp, effectiveCode);
+      }
+      return { ok: true };
+    }
     catch (e) { return { error: e.message }; }
   });
 

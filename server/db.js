@@ -61,6 +61,20 @@ async function initDB() {
       connectionTimeoutMillis: 5000,
     });
     await pool.query('SELECT 1');
+    // Create table if it doesn't exist — so users never need to run SQL manually
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_data (
+        id          TEXT        PRIMARY KEY DEFAULT 'default',
+        data        JSONB       NOT NULL DEFAULT '{}',
+        settings    JSONB       NOT NULL DEFAULT '{}',
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      INSERT INTO app_data (id, data, settings)
+      VALUES ('default', '{}', '{}')
+      ON CONFLICT (id) DO NOTHING
+    `);
     pgPool = pool;
     usePostgres = true;
     console.log('[db] Connected to PostgreSQL (Supabase)');

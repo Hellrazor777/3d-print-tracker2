@@ -12,6 +12,20 @@ const DEV_URL = 'http://localhost:5173';
 
 const DATA_PATH = path.join(app.getPath('userData'), 'data.json');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
+
+// Inject databaseUrl from settings.json into process.env before db module loads,
+// so users can configure cloud sync via the in-app Settings field instead of
+// needing to set a Windows system environment variable.
+if (!process.env.DATABASE_URL) {
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(SETTINGS_PATH)) {
+      const s = JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'));
+      if (s.databaseUrl) process.env.DATABASE_URL = s.databaseUrl;
+    }
+  } catch {}
+}
+
 const PORT = 3000;
 let localServer = null;
 let mainWin   = null;

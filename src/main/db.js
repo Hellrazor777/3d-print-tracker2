@@ -1,10 +1,15 @@
 /**
  * Database abstraction layer for Electron desktop app.
  *
- * When DATABASE_URL is set as a Windows environment variable → saves to Supabase
- * (same database as the cloud/Render deployment — data stays in sync).
- * Also always keeps a local file backup so data is safe if the cloud goes down.
- * Otherwise → silently falls back to local JSON files in userData (original behaviour).
+ * Priority for cloud URL:
+ *   1. process.env.DATABASE_URL (system env var — legacy / power users)
+ *   2. settings.json → databaseUrl (set via in-app Settings field — recommended)
+ *
+ * On startup main.js injects databaseUrl from settings into process.env before
+ * this module loads, so both paths end up using the same initiation code below.
+ *
+ * Callers that want to reconnect at runtime (e.g. after the user pastes a new URL
+ * in Settings) should call connectToCloud(url) directly.
  */
 
 // ─── PostgreSQL (Supabase) ────────────────────────────────────────────────────
@@ -12,23 +17,46 @@
 let usePostgres = false;
 let pgPool = null;
 
-const dbReadyPromise = (async () => {
-  if (!process.env.DATABASE_URL) return;
+async function connectToCloud(url) {
+  if (!url) return { ok: false, error: 'No URL provided' };
   try {
     const { Pool } = require('pg');
     const pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false }, // Windows pg client struggles with cert verification against Supabase
+      connectionString: url,
+      ssl: url.includes('localhost') ? false : { rejectUnauthorized: false },
       connectionTimeoutMillis: 5000,
     });
     await pool.query('SELECT 1');
+    // Auto-create table so users never need to run SQL manually
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS app_data (
+        id          TEXT        PRIMARY KEY DEFAULT 'default',
+        data        JSONB       NOT NULL DEFAULT '{}',
+        settings    JSONB       NOT NULL DEFAULT '{}',
+        updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await pool.query(`
+      INSERT INTO app_data (id, data, settings)
+      VALUES ('default', '{}', '{}')
+      ON CONFLICT (id) DO NOTHING
+    `);
+    // Swap in new pool, close old one
+    if (pgPool) await pgPool.end().catch(() => {});
     pgPool = pool;
     usePostgres = true;
     console.log('[db] Connected to Supabase — data will sync with cloud.');
+    return { ok: true };
   } catch (err) {
-    console.log('[db] Supabase not reachable — using local files.', err.message);
+    console.warn('[db] Supabase connection failed:', err.message);
+    return { ok: false, error: err.message };
   }
-})();
+}
+
+// Connect at startup if URL is available (injected by main.js from env or settings)
+const dbReadyPromise = process.env.DATABASE_URL
+  ? connectToCloud(process.env.DATABASE_URL)
+  : Promise.resolve({ ok: false });
 
 // ─── Local file helpers ───────────────────────────────────────────────────────
 
@@ -138,7 +166,6 @@ async function isUsingCloud() {
 async function pushDataToCloud(data, localPath, fs) {
   await dbReadyPromise;
   if (!usePostgres) throw new Error('Not connected to Supabase');
-  // Always keep local file up to date as a backup
   writeLocalData(data, localPath, fs);
   await pgPool.query(
     `INSERT INTO app_data (id, data, updated_at)
@@ -149,4 +176,4 @@ async function pushDataToCloud(data, localPath, fs) {
   );
 }
 
-module.exports = { loadData, saveData, loadSettings, saveSettings, dbReadyPromise, isUsingCloud, pushDataToCloud };
+module.exports = { loadData, saveData, loadSettings, saveSettings, dbReadyPromise, isUsingCloud, pushDataToCloud, connectToCloud };

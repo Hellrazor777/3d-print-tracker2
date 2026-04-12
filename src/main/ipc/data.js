@@ -30,6 +30,34 @@ module.exports = function registerDataHandlers(ipcMain, DATA_PATH, SETTINGS_PATH
   // ── Cloud sync helpers ──
   ipcMain.handle('is-using-cloud', () => db.isUsingCloud());
 
+  // Connect to Supabase at runtime using a URL pasted into Settings.
+  // Saves the URL to settings.json so it persists across restarts.
+  ipcMain.handle('connect-to-cloud', async (_, url) => {
+    const result = await db.connectToCloud(url || '');
+    if (result.ok) {
+      // Persist the URL so main.js can inject it on next startup
+      try {
+        const current = fs.existsSync(SETTINGS_PATH)
+          ? JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+          : {};
+        const updated = { ...current, databaseUrl: url };
+        fs.writeFileSync(SETTINGS_PATH, JSON.stringify(updated), 'utf8');
+      } catch {}
+    }
+    return result;
+  });
+
+  ipcMain.handle('disconnect-from-cloud', async () => {
+    try {
+      const current = fs.existsSync(SETTINGS_PATH)
+        ? JSON.parse(fs.readFileSync(SETTINGS_PATH, 'utf8'))
+        : {};
+      const { databaseUrl: _removed, ...rest } = current;
+      fs.writeFileSync(SETTINGS_PATH, JSON.stringify(rest), 'utf8');
+    } catch {}
+    return { ok: true };
+  });
+
   // Reads local data.json directly and pushes it to Supabase
   ipcMain.handle('push-local-to-cloud', async () => {
     try {

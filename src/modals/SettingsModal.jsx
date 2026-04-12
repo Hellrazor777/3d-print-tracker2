@@ -27,11 +27,38 @@ export default function SettingsModal() {
 
   const [isCloud, setIsCloud] = useState(false);
   const [pushStatus, setPushStatus] = useState('');
+  const [dbUrl, setDbUrl] = useState(appSettings.databaseUrl || '');
+  const [connectStatus, setConnectStatus] = useState('');
+  const [connecting, setConnecting] = useState(false);
+
   useEffect(() => {
     if (window.electronAPI?.isUsingCloud) {
       window.electronAPI.isUsingCloud().then(v => setIsCloud(!!v));
     }
   }, []);
+
+  const handleConnect = async () => {
+    if (!dbUrl.trim()) return;
+    setConnecting(true);
+    setConnectStatus('connecting…');
+    const r = await window.electronAPI.connectToCloud(dbUrl.trim());
+    if (r.ok) {
+      setIsCloud(true);
+      setConnectStatus('connected ✓ — push your data below to sync');
+      await saveAppSettings({ ...appSettings, databaseUrl: dbUrl.trim() });
+    } else {
+      setConnectStatus('error: ' + r.error);
+    }
+    setConnecting(false);
+  };
+
+  const handleDisconnect = async () => {
+    await window.electronAPI.disconnectFromCloud();
+    setIsCloud(false);
+    setDbUrl('');
+    setConnectStatus('disconnected');
+    await saveAppSettings({ ...appSettings, databaseUrl: '' });
+  };
 
   const [pushing, setPushing] = useState(false);
   const handlePushToCloud = async () => {
@@ -92,6 +119,34 @@ export default function SettingsModal() {
             <button className="icon-btn settings-close-btn" onClick={closeModal}>✕</button>
           </div>
           <div className="settings-body">
+
+            {isElectron && (
+              <SettingsSection collapsed={collapsed} toggleSection={toggleSection} id="ssec-cloud" title="Cloud Sync">
+                <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
+                  Paste your <strong>Supabase connection string</strong> to sync data with the cloud web app.
+                  Get it from <em>Supabase → Project Settings → Database → Connection string → URI</em>.
+                </p>
+                <div className="field">
+                  <label>Supabase connection string {isCloud && <span style={{ color: 'var(--green)', fontSize: 11 }}>● connected</span>}</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input
+                      type="password"
+                      value={dbUrl}
+                      onChange={e => setDbUrl(e.target.value)}
+                      placeholder="postgresql://postgres:[password]@[host]:5432/postgres"
+                      style={{ flex: 1, fontFamily: 'monospace', fontSize: 11 }}
+                    />
+                    {isCloud
+                      ? <button className="btn" onClick={handleDisconnect} style={{ whiteSpace: 'nowrap', color: 'var(--red-text, #ef4444)' }}>Disconnect</button>
+                      : <button className="btn btn-primary" onClick={handleConnect} disabled={connecting || !dbUrl.trim()} style={{ whiteSpace: 'nowrap' }}>{connecting ? 'connecting…' : 'Connect'}</button>
+                    }
+                  </div>
+                  {connectStatus && (
+                    <p style={{ fontSize: 11, marginTop: 6, color: connectStatus.startsWith('error') ? 'var(--red-text, #ef4444)' : 'var(--green)' }}>{connectStatus}</p>
+                  )}
+                </div>
+              </SettingsSection>
+            )}
 
             <SettingsSection collapsed={collapsed} toggleSection={toggleSection} id="ssec-appearance" title="Appearance">
               <div className="field" style={{ marginBottom: 0 }}>

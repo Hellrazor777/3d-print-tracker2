@@ -15,44 +15,21 @@ export function localFileUrl(filePath) {
   return 'localfile:///' + p;
 }
 
-const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE) || '';
-
 async function loadData() {
   if (isElectron) return await window.electronAPI.loadData();
-  try {
-    const r = await fetch(`${API_BASE}/api/data`);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
+  try { return JSON.parse(localStorage.getItem('3dp_data')); } catch { return null; }
 }
 async function saveData(data) {
   if (isElectron) return await window.electronAPI.saveData(data);
-  try {
-    const r = await fetch(`${API_BASE}/api/data`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    if (!r.ok) console.error('[saveData] API error:', r.status, await r.text().catch(() => ''));
-  } catch (e) {
-    console.error('[saveData] Network error:', e.message);
-  }
+  localStorage.setItem('3dp_data', JSON.stringify(data));
 }
 async function loadSettings() {
   if (isElectron) return await window.electronAPI.loadSettings();
-  try {
-    const r = await fetch(`${API_BASE}/api/settings`);
-    if (!r.ok) return null;
-    return await r.json();
-  } catch { return null; }
+  try { return JSON.parse(localStorage.getItem('3dp_settings')); } catch { return null; }
 }
 async function saveSettingsStorage(s) {
   if (isElectron) return await window.electronAPI.saveSettings(s);
-  await fetch(`${API_BASE}/api/settings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(s),
-  }).catch(() => {});
+  localStorage.setItem('3dp_settings', JSON.stringify(s));
 }
 
 const SAMPLE_PARTS = [
@@ -148,6 +125,26 @@ export function AppProvider({ children }) {
         initInventory = [];
         initNextId = 8;
       }
+      // Auto-add any product (active or archived) that has no inventory entry yet
+      const invNames = new Set(initInventory.map(i => i.name));
+      const allProductNames = Object.keys(initProducts);
+      const missing = allProductNames.filter(n => !invNames.has(n));
+      if (missing.length) {
+        let t = Date.now();
+        missing.forEach(n => {
+          initInventory = [...initInventory, {
+            id: 'inv_' + (t++),
+            name: n,
+            category: initProducts[n]?.category || '',
+            built: 0,
+            location: '',
+            storage: {},
+            distributions: [],
+            source: 'auto',
+          }];
+        });
+      }
+
       setParts(initParts);
       setProducts(initProducts);
       setInventory(initInventory);
@@ -180,12 +177,10 @@ export function AppProvider({ children }) {
       cleanupInventoryListener = window.electronAPI.onInventoryUpdated(onInventoryUpdated);
     }
 
-    // Listen for printer status updates from main process (Electron) or SSE (web)
+    // Listen for printer status updates from main process
     let cleanupPrinterUpdate = null;
     let cleanupBambuConn = null;
     let cleanupBambuToken = null;
-    let sseSource = null;
-
     if (window.electronAPI?.onPrinterUpdate) {
       cleanupPrinterUpdate = window.electronAPI.onPrinterUpdate((_, { serial, id, state }) => {
         const key = serial || id;
@@ -199,21 +194,6 @@ export function AppProvider({ children }) {
         setAppSettings(prev => { next = { ...prev, bambuAuth: { ...prev.bambuAuth, ...auth } }; return next; });
         if (next) saveSettingsStorage(next);
       });
-    } else {
-      // Web mode: use SSE to keep printerStatus and bambuConn in sync with the server
-      sseSource = new EventSource(`${API_BASE}/api/printers/events`);
-      sseSource.addEventListener('printer-update', e => {
-        try {
-          const { serial, state } = JSON.parse(e.data);
-          if (serial) setPrinterStatus(prev => ({ ...prev, [serial]: state }));
-        } catch {}
-      });
-      sseSource.addEventListener('bambu-conn', e => {
-        try { setBambuConn(JSON.parse(e.data) || { connected: false }); } catch {}
-      });
-      sseSource.addEventListener('devices', e => {
-        // devices list update — PrintersView handles its own copy; nothing needed here
-      });
     }
 
     return () => {
@@ -221,7 +201,6 @@ export function AppProvider({ children }) {
       if (typeof cleanupPrinterUpdate === 'function') cleanupPrinterUpdate();
       if (typeof cleanupBambuConn === 'function') cleanupBambuConn();
       if (typeof cleanupBambuToken === 'function') cleanupBambuToken();
-      if (sseSource) sseSource.close();
     };
   }, []);
 
@@ -508,6 +487,11 @@ export function AppProvider({ children }) {
   const saveAddProduct = useCallback(({ name, category, description, shiny, designer, source, imagePath }) => {
     setProducts(prev => ({ ...prev, [name]: { category: category || '', description: description || '', shiny: !!shiny, designer: designer || '', source: source || '', imagePath: imagePath || '' } }));
     setOpenProducts(prev => { const next = new Set(prev); next.add(name); return next; });
+    // Auto-create an inventory entry with no quantity so it shows up in Inventory immediately
+    setInventory(prev => {
+      if (prev.some(i => i.name === name)) return prev; // already exists
+      return [...prev, { id: 'inv_' + Date.now(), name, category: category || '', built: 0, location: '', storage: {}, distributions: [], source: 'auto' }];
+    });
     closeModal();
   }, [closeModal]);
 

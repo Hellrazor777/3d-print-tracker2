@@ -339,7 +339,7 @@ function ProductCard({ item }) {
 }
 
 function PartsTable({ item }) {
-  const { parts, openModal, reprint, deletePart, adjustSubPrinted, deleteSubPart } = useApp();
+  const { parts, openModal, reprint, deletePart, adjustSubPrinted, deleteSubPart, setPartStatus } = useApp();
   const ps = parts.filter(p => p.item === item);
 
   return (
@@ -372,6 +372,7 @@ function PartsTable({ item }) {
               <span className={`sp sp-${p.status}`} style={{ cursor: 'pointer' }} title="click to change status" onClick={e => { e.stopPropagation(); openModal('status', { partId: p.id }); }}>{p.status}</span>
               <div className="part-row-actions">
                 {p.status === 'done' && <button className="icon-btn" title="reprint" onClick={() => reprint(p.id)}>↺</button>}
+                {p.status !== 'queue' && p.status !== 'printing' && <button className="icon-btn" title="add to print queue" style={{ fontSize: 11, color: '#22c55e' }} onClick={() => setPartStatus(p.id, 'queue')}>▷Queue</button>}
                 <button className="icon-btn" title="add sub-part" onClick={e => { e.stopPropagation(); openModal('subpart', { partId: p.id }); }}>+</button>
                 <button className="icon-btn" title="edit" onClick={() => openModal('part', { editId: p.id })}>✎</button>
                 <button className="icon-btn" title="delete" onClick={() => deletePart(p.id)}>✕</button>

@@ -337,9 +337,10 @@ function AmsDisplay({ ams, vtTray, onUnload }) {
   const nowTray = parseInt(ams?.tray_now ?? -1, 10);
   const vtActive = nowTray === 254;
   const hasVt = vtTray && vtTray.tray_type;
+  const hasAms = units.length > 0;
 
   // Non-AMS printer — show external spool only
-  if (!units.length) {
+  if (!hasAms) {
     if (!hasVt) return null;
     return (
       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '0.5px solid var(--border)' }}>
@@ -347,7 +348,7 @@ function AmsDisplay({ ams, vtTray, onUnload }) {
           Filament
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <FilamentSwatch tray={vtTray} isActive={false} size={36} onUnload={onUnload} />
+          <FilamentSwatch tray={vtTray} isActive={false} size={36} onUnload={onUnload ? () => onUnload(false) : null} />
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text)' }}>
               {vtTray.tray_sub_brands || vtTray.tray_type}
@@ -371,13 +372,13 @@ function AmsDisplay({ ams, vtTray, onUnload }) {
         <div key={ui} style={{ display: 'flex', gap: 4, marginBottom: ui < units.length - 1 ? 4 : 0 }}>
           {(unit.tray || []).map((tray, ti) => {
             const globalIdx = ui * 4 + ti;
-            return <FilamentSwatch key={ti} tray={tray} isActive={globalIdx === nowTray} onUnload={onUnload} />;
+            return <FilamentSwatch key={ti} tray={tray} isActive={globalIdx === nowTray} onUnload={onUnload ? () => onUnload(true) : null} />;
           })}
         </div>
       ))}
       {hasVt && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6, paddingTop: 6, borderTop: '0.5px solid var(--border)' }}>
-          <FilamentSwatch tray={vtTray} isActive={vtActive} onUnload={onUnload} />
+          <FilamentSwatch tray={vtTray} isActive={vtActive} onUnload={onUnload ? () => onUnload(false) : null} />
           <div>
             <div style={{ fontSize: 10, color: 'var(--text2)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Ext</div>
             <div style={{ fontSize: 11, color: 'var(--text)' }}>{vtTray.tray_sub_brands || vtTray.tray_type}</div>
@@ -1006,7 +1007,21 @@ function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveCon
         {/* HMS errors */}
         {state?.hms && state.hms.length > 0 && (
           <div style={{ marginBottom: 8, padding: '8px 10px', background: 'rgba(239,68,68,.1)', border: '0.5px solid rgba(239,68,68,.35)', borderRadius: 8 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--red-text, #ef4444)', marginBottom: 6 }}>⚠ HMS Error{state.hms.length > 1 ? 's' : ''}</div>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--red-text, #ef4444)', flex: 1 }}>⚠ HMS Error{state.hms.length > 1 ? 's' : ''}</span>
+              {onPrintCmd && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {cmdBusy && <span style={{ fontSize: 10, color: 'var(--text2)' }}>Sending…</span>}
+                  {cmdErr  && <span style={{ fontSize: 10, color: 'var(--red-text, #ef4444)' }}>{cmdErr}</span>}
+                  <button
+                    onClick={() => sendCmd('clean_print_error')}
+                    disabled={cmdBusy}
+                    style={{ fontSize: 10, padding: '2px 8px', borderRadius: 6, border: '0.5px solid rgba(239,68,68,.5)', background: 'rgba(239,68,68,.15)', color: 'var(--red-text, #ef4444)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+                    title="Clear HMS error on printer"
+                  >✕ Clear Error</button>
+                </div>
+              )}
+            </div>
             {state.hms.map((h, i) => {
               const code = fmtHmsCode(h);
               const desc = hmsDescription(code);
@@ -1031,7 +1046,7 @@ function PrinterCard({ device, state, onRefresh, storedIp, storedCode, onSaveCon
           <AmsDisplay
             ams={state.ams}
             vtTray={state.vt_tray}
-            onUnload={onPrintCmd ? () => onPrintCmd('unload_filament') : null}
+            onUnload={null}
           />
         )}
       </div>

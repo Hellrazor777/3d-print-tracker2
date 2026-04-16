@@ -783,7 +783,10 @@ function getDiscoveredIp(serial) {
 // cmd: 'stop' | 'pause' | 'resume'
 function bambuPrintCmd(serial, cmd) {
   if (!mqttClient?.connected) return { error: 'Not connected to Bambu' };
-  const payload = JSON.stringify({ print: { sequence_id: '0', command: cmd, param: '' } });
+  // unload_filament uses AMS change-filament with target 255 (eject); pause/resume/stop use print command
+  const payload = cmd === 'unload_filament'
+    ? JSON.stringify({ print: { sequence_id: '0', command: 'ams_change_filament', target: 255, curr_temp: 0, tar_temp: 0 } })
+    : JSON.stringify({ print: { sequence_id: '0', command: cmd, param: '' } });
   mqttClient.publish(`device/${serial}/request`, payload);
   return { ok: true };
 }

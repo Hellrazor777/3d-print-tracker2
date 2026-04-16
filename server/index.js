@@ -271,8 +271,8 @@ app.get('/api/printers/status', (req, res) => {
 app.post('/api/printers/bambu/print-cmd', async (req, res) => {
   try {
     const { serial, cmd } = req.body;
-    if (!serial || !['stop', 'pause', 'resume'].includes(cmd))
-      return res.status(400).json({ error: 'serial and cmd (stop|pause|resume) required' });
+    if (!serial || !['stop', 'pause', 'resume', 'unload_filament'].includes(cmd))
+      return res.status(400).json({ error: 'serial and cmd (stop|pause|resume|unload_filament) required' });
     const result = printers.bambuPrintCmd(serial, cmd);
     if (result.error) return res.status(503).json(result);
     res.json(result);

@@ -7,6 +7,7 @@ import ArchiveView from './views/ArchiveView';
 import ColourView from './views/ColourView';
 import InventoryView from './views/InventoryView';
 import PrintersView from './views/PrintersView';
+import PrintQueueView from './views/PrintQueueView';
 import PartModal from './modals/PartModal';
 import AddProductModal from './modals/AddProductModal';
 import ManageProductModal from './modals/ManageProductModal';
@@ -63,6 +64,7 @@ export default function App() {
         {currentView === 'colours' && <ColourView />}
         {currentView === 'inventory' && <InventoryView />}
         {currentView === 'printers' && <PrintersView />}
+        {currentView === 'queue'    && <PrintQueueView />}
       </div>
 
       {/* Modals */}

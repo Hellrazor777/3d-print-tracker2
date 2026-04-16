@@ -23,6 +23,7 @@ export default function SettingsModal() {
     addCategory, removeCategory, moveCategoryOrder, openModal,
     addStorageLocation, removeStorageLocation, moveStorageLocation,
     addOutgoingDest, removeOutgoingDest, moveOutgoingDest,
+    exportData,
   } = useApp();
 
   const [isCloud, setIsCloud] = useState(false);
@@ -277,6 +278,8 @@ export default function SettingsModal() {
           </div>
           <div className="settings-footer">
             <button className="btn" onClick={() => openModal('filament-library')} style={{ marginRight: 'auto' }}>📚 Filament Library</button>
+            <button className="btn" onClick={() => { openModal('import', { mode: 'import' }); }}>↑ Import CSV</button>
+            <button className="btn" onClick={exportData}>↓ Export CSV</button>
             {isElectron && isCloud && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {pushStatus && <span style={{ fontSize: 11, color: pushStatus.startsWith('error') ? 'var(--red-text, #ef4444)' : 'var(--text2)' }}>{pushStatus}</span>}

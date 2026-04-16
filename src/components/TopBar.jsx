@@ -1,7 +1,7 @@
 import { useApp } from '../context/AppContext';
 
 export default function TopBar() {
-  const { currentView, setView, openModal, exportData, isElectron } = useApp();
+  const { currentView, setView, openModal, isElectron } = useApp();
 
   return (
     <div className="topbar">
@@ -11,7 +11,8 @@ export default function TopBar() {
         <button id="vb-archive"   className={`view-btn${currentView === 'archive'   ? ' active' : ''}`} onClick={() => setView('archive')}>Archive</button>
         <button id="vb-colours"   className={`view-btn${currentView === 'colours'   ? ' active' : ''}`} onClick={() => setView('colours')}>Colour</button>
         <button id="vb-inventory" className={`view-btn${currentView === 'inventory' ? ' active' : ''}`} onClick={() => setView('inventory')}>Inventory</button>
-        <button id="vb-printers" className={`view-btn${currentView === 'printers' ? ' active' : ''}`} onClick={() => setView('printers')}>Printers</button>
+        <button id="vb-printers"   className={`view-btn${currentView === 'printers'  ? ' active' : ''}`} onClick={() => setView('printers')}>Printers</button>
+        <button id="vb-queue"     className={`view-btn${currentView === 'queue'     ? ' active' : ''}`} onClick={() => setView('queue')}>Print Queue</button>
         {isElectron && (
           <button
             className="view-btn popout-btn"
@@ -23,8 +24,6 @@ export default function TopBar() {
       </div>
       <button className="btn" onClick={() => openModal('settings')} title="settings">⚙ Settings</button>
       <button className="btn btn-n3d" onClick={() => openModal('n3d')}>N3D Browse</button>
-      <button className="btn" onClick={() => openModal('import', { mode: 'import' })}>↑ Import CSV</button>
-      <button className="btn" onClick={exportData}>↓ Export CSV</button>
       <button className="btn" onClick={() => openModal('add-product')}>+ Add Product</button>
     </div>
   );

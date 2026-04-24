@@ -231,6 +231,63 @@ export function AppProvider({ children }) {
     return (appSettings.outgoingDests?.length) ? appSettings.outgoingDests : ['store', 'markets', 'website'];
   }, [appSettings]);
 
+  const getBoxLocations = useCallback(() => {
+    return appSettings.boxLocations || [];
+  }, [appSettings]);
+
+  const getLabelSize = useCallback(() => {
+    return appSettings.labelSize || { width: 2.25, height: 1.25 };
+  }, [appSettings]);
+
+  const getLabelShowParts = useCallback(() => {
+    return appSettings.labelShowParts !== false; // default true
+  }, [appSettings]);
+
+  const getAllPartsBoxCodes = useCallback(() => {
+    return Object.values(productsRef.current).flatMap(p => p.partsBoxes || []).map(b => b.code);
+  }, []);
+
+  const addBoxLocation = useCallback((letter, name) => {
+    setAppSettings(prev => {
+      const locs = prev.boxLocations || [];
+      if (locs.some(l => l.letter.toUpperCase() === letter.toUpperCase())) return prev;
+      const next = { ...prev, boxLocations: [...locs, { letter: letter.toUpperCase(), name }] };
+      saveSettingsStorage(next);
+      return next;
+    });
+  }, []);
+
+  const removeBoxLocation = useCallback((letter) => {
+    setAppSettings(prev => {
+      const next = { ...prev, boxLocations: (prev.boxLocations || []).filter(l => l.letter !== letter) };
+      saveSettingsStorage(next);
+      return next;
+    });
+  }, []);
+
+  const moveBoxLocation = useCallback((letter, dir) => {
+    setAppSettings(prev => {
+      const locs = [...(prev.boxLocations || [])];
+      const idx = locs.findIndex(l => l.letter === letter);
+      if (idx === -1) return prev;
+      const swap = dir === 'up' ? idx - 1 : idx + 1;
+      if (swap < 0 || swap >= locs.length) return prev;
+      [locs[idx], locs[swap]] = [locs[swap], locs[idx]];
+      const next = { ...prev, boxLocations: locs };
+      saveSettingsStorage(next);
+      return next;
+    });
+  }, []);
+
+  const renameBoxLocation = useCallback((letter, newName) => {
+    setAppSettings(prev => {
+      const locs = (prev.boxLocations || []).map(l => l.letter === letter ? { ...l, name: newName } : l);
+      const next = { ...prev, boxLocations: locs };
+      saveSettingsStorage(next);
+      return next;
+    });
+  }, []);
+
   // ── Part helpers ──
   const getItems = useCallback((p = partsRef.current) => {
     return [...new Set(p.map(x => x.item).filter(Boolean))];
@@ -436,13 +493,14 @@ export function AppProvider({ children }) {
   }, []);
 
   // ── Product CRUD ──
-  const saveManageProduct = useCallback(({ oldName, newName, category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxEnabled, partsBox }) => {
+  const saveManageProduct = useCallback(({ oldName, newName, category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxes }) => {
     setParts(prev => prev.map(p => p.item === oldName ? { ...p, item: newName } : p));
     setProducts(prev => {
       const oldMeta = prev[oldName] || {};
       const next = { ...prev };
       delete next[oldName];
-      next[newName] = { ...oldMeta, category, description, shiny, n3dUrl: n3dUrl || oldMeta.n3dUrl || '', designer, source, imagePath: imagePath !== undefined ? imagePath : (oldMeta.imagePath || ''), partsBoxEnabled: !!partsBoxEnabled, partsBox: partsBoxEnabled ? (partsBox || '') : '' };
+      const boxes = partsBoxes || oldMeta.partsBoxes || [];
+      next[newName] = { ...oldMeta, category, description, shiny, n3dUrl: n3dUrl || oldMeta.n3dUrl || '', designer, source, imagePath: imagePath !== undefined ? imagePath : (oldMeta.imagePath || ''), partsBoxes: boxes, partsBoxEnabled: boxes.length > 0, partsBox: boxes[0]?.code || '' };
       return next;
     });
     setOpenProducts(prev => {
@@ -960,7 +1018,7 @@ export function AppProvider({ children }) {
     printerStatus, bambuConn, lastMovedProduct, setLastMovedProduct,
     undoStack, undo,
     // Helpers
-    getCategoryOrder, getStorageLocations, getOutgoingDests, getItems, isReady, productHas3mf, invOnHand, invMigrateStorage,
+    getCategoryOrder, getStorageLocations, getOutgoingDests, getBoxLocations, getLabelSize, getLabelShowParts, getAllPartsBoxCodes, getItems, isReady, productHas3mf, invOnHand, invMigrateStorage,
     // UI
     setView, toggleProduct, toggleCat, toggleColour, toggleInvCard, toggleInvSection, openModal, closeModal,
     // Parts
@@ -973,6 +1031,7 @@ export function AppProvider({ children }) {
     saveAppSettings, addCategory, removeCategory, renameCategory, moveCategoryOrder,
     addStorageLocation, removeStorageLocation, renameStorageLocation, moveStorageLocation,
     addOutgoingDest, removeOutgoingDest, renameOutgoingDest, moveOutgoingDest,
+    addBoxLocation, removeBoxLocation, moveBoxLocation, renameBoxLocation,
     // Electron file ops
     uploadProductImage, openProductFolder, openProductInSlicer, uploadProduct3mf, addProduct3mfFiles, openExternalUrl, setProductImagePath,
     // Import / Export
@@ -987,7 +1046,5 @@ export function AppProvider({ children }) {
 }
 
 export function useApp() {
-  const ctx = useContext(AppContext);
-  if (!ctx) throw new Error('useApp must be used inside AppProvider');
-  return ctx;
+  return useContext(AppContext);
 }

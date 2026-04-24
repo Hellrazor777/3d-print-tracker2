@@ -77,14 +77,22 @@ export default function ArchiveView() {
                 <div className="product-title-wrap">
                   <span className="product-title" style={{ color: 'var(--text2)' }}>{esc(item)}</span>
                   {cat && <span className="cat-tag" style={{ marginLeft: 4 }}>{esc(cat)}</span>}
-                  {products[item]?.partsBoxEnabled && (
-                    <span className="badge-shiny" style={{ background: 'var(--bg2)', color: 'var(--text2)', borderColor: 'var(--border2)', marginLeft: 4 }} title="has a parts box">
-                      📦{products[item].partsBox ? ` #${products[item].partsBox}` : ' parts box'}
+                  {(products[item]?.partsBoxes?.length > 0
+                    ? products[item].partsBoxes
+                    : (products[item]?.partsBoxEnabled && products[item]?.partsBox
+                        ? [{ code: products[item].partsBox, locationLetter: '' }]
+                        : [])
+                  ).map(box => (
+                    <span key={box.code} className="badge-shiny" style={{ background: 'var(--bg2)', color: 'var(--text2)', borderColor: 'var(--border2)', marginLeft: 4, cursor: 'pointer' }}
+                      onClick={e => { e.stopPropagation(); openModal('parts-box-label', { item, code: box.code }); }}
+                      title="print label">
+                      📦 {box.code} <span style={{ fontSize: 10, opacity: 0.7 }}>🖨</span>
                     </span>
-                  )}
+                  ))}
                 </div>
                 <span style={{ fontSize: 11, color: 'var(--text2)', marginRight: 8 }}>{dp}/{tp} pcs</span>
                 <span className="ready-badge" style={{ marginRight: 8 }}>✓ complete</span>
+                <button className="rename-btn" onClick={e => { e.stopPropagation(); openModal('manage-product', { item }); }}>Manage</button>
                 <button className="btn" style={{ fontSize: 12, padding: '4px 12px' }} onClick={() => {
                   if (products[item]?.partsBoxEnabled) {
                     openModal('parts-box-check', { item, action: 'restore' });

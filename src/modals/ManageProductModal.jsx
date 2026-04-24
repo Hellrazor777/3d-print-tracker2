@@ -2,8 +2,28 @@ import { useState } from 'react';
 import { useApp, localFileUrl } from '../context/AppContext';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 
+function esc(s) { return String(s || ''); }
+
+// Compute next box code given a letter, considering all currently-used codes
+// plus any boxes already added locally in this modal session.
+function nextCodeForLetter(letter, globalCodes, localBoxes, currentProductOldCodes) {
+  const L = letter.toUpperCase();
+  // Exclude the current product's old codes (they will be replaced on save)
+  const effective = globalCodes.filter(c => !currentProductOldCodes.includes(c));
+  const allCodes = [...effective, ...localBoxes.map(b => b.code)];
+  const nums = allCodes
+    .filter(c => c && c.toUpperCase().startsWith(L))
+    .map(c => parseInt(c.slice(L.length)))
+    .filter(n => Number.isFinite(n) && n > 0);
+  return L + ((nums.length ? Math.max(...nums) : 0) + 1);
+}
+
 export default function ManageProductModal() {
-  const { modal, closeModal, saveManageProduct, deleteProductPermanently, products, parts, getCategoryOrder, isElectron, appSettings } = useApp();
+  const {
+    modal, closeModal, saveManageProduct, deleteProductPermanently,
+    products, parts, getCategoryOrder, getBoxLocations, getAllPartsBoxCodes,
+    isElectron, appSettings, openModal,
+  } = useApp();
   const item = modal?.item || '';
   const prod = products[item] || {};
   const [name, setName] = useState(item);
@@ -14,9 +34,34 @@ export default function ManageProductModal() {
   const [designer, setDesigner] = useState(prod.designer || '');
   const [source, setSource] = useState(prod.source || '');
   const [imagePath, setImagePath] = useState(prod.imagePath || '');
-  const [partsBoxEnabled, setPartsBoxEnabled] = useState(!!prod.partsBoxEnabled);
-  const [partsBox, setPartsBox] = useState(prod.partsBox || '');
+
+  // Multi-box state — initialised from saved data (support legacy single-box too)
+  const initBoxes = () => {
+    if (prod.partsBoxes?.length) return prod.partsBoxes;
+    // Migrate legacy single-box data
+    if (prod.partsBoxEnabled && prod.partsBox) {
+      return [{ code: prod.partsBox, locationLetter: prod.partsBox[0] || 'A' }];
+    }
+    return [];
+  };
+  const [partsBoxes, setPartsBoxes] = useState(initBoxes);
+  const [newBoxLetter, setNewBoxLetter] = useState('');
+
   const cats = getCategoryOrder();
+  const boxLocations = getBoxLocations();
+
+  const handleAddBox = () => {
+    if (!newBoxLetter) return;
+    const globalCodes = getAllPartsBoxCodes();
+    const currentProductOldCodes = (prod.partsBoxes || []).map(b => b.code);
+    const code = nextCodeForLetter(newBoxLetter, globalCodes, partsBoxes, currentProductOldCodes);
+    setPartsBoxes(prev => [...prev, { code, locationLetter: newBoxLetter.toUpperCase() }]);
+    setNewBoxLetter('');
+  };
+
+  const handleRemoveBox = (code) => {
+    setPartsBoxes(prev => prev.filter(b => b.code !== code));
+  };
 
   const [uploadingImage, setUploadingImage] = useState(false);
   const handleUploadImage = async () => {
@@ -37,7 +82,7 @@ export default function ManageProductModal() {
 
   const handleSave = () => {
     if (!name.trim()) return;
-    saveManageProduct({ oldName: item, newName: name.trim(), category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxEnabled, partsBox: partsBox.trim() });
+    saveManageProduct({ oldName: item, newName: name.trim(), category, description, shiny, n3dUrl, designer, source, imagePath, partsBoxes });
   };
 
   const [confirmState, setConfirmState] = useState(null);
@@ -52,10 +97,12 @@ export default function ManageProductModal() {
     });
   };
 
+  const locationName = (letter) => boxLocations.find(l => l.letter === letter)?.name || letter;
+
   return (
     <div id="rename-modal" style={{ display: '' }}>
       <div className="modal-bg" onClick={closeModal}>
-        <div className="modal" style={{ width: 300 }} onClick={e => e.stopPropagation()}>
+        <div className="modal" style={{ width: 320 }} onClick={e => e.stopPropagation()}>
           <form onSubmit={e => { e.preventDefault(); handleSave(); }}>
           <h3>Manage Product</h3>
           <div className="field"><label>product name</label><input value={name} onChange={e => setName(e.target.value)} autoFocus /></div>
@@ -71,15 +118,67 @@ export default function ManageProductModal() {
             <input type="checkbox" id="manage-shiny" checked={shiny} onChange={e => setShiny(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
             <label htmlFor="manage-shiny" style={{ marginBottom: 0, cursor: 'pointer', fontSize: 14 }}>✨ shiny variant</label>
           </div>
+
+          {/* ── Parts Boxes ── */}
           <div className="field">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: partsBoxEnabled ? 8 : 0 }}>
-              <input type="checkbox" id="manage-parts-box" checked={partsBoxEnabled} onChange={e => setPartsBoxEnabled(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
-              <label htmlFor="manage-parts-box" style={{ marginBottom: 0, cursor: 'pointer', fontSize: 14 }}>📦 has a parts box</label>
-            </div>
-            {partsBoxEnabled && (
-              <input value={partsBox} onChange={e => setPartsBox(e.target.value)} placeholder="Box # or label e.g. 12" style={{ marginTop: 2 }} />
+            <label style={{ marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>📦 Parts boxes</span>
+              {partsBoxes.length > 0 && <span style={{ fontSize: 11, color: 'var(--text2)', fontWeight: 400 }}>{partsBoxes.length} box{partsBoxes.length !== 1 ? 'es' : ''}</span>}
+            </label>
+
+            {partsBoxes.length > 0 && (
+              <div style={{ marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {partsBoxes.map(box => (
+                  <div key={box.code} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'var(--bg2)', borderRadius: 'var(--radius)', border: '0.5px solid var(--border2)' }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 700, fontSize: 14, minWidth: 36 }}>{esc(box.code)}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text2)', flex: 1 }}>{esc(locationName(box.locationLetter))}</span>
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      style={{ fontSize: 11, color: 'var(--text3)' }}
+                      title="remove this box"
+                      onClick={() => handleRemoveBox(box.code)}
+                    >✕</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {boxLocations.length > 0 ? (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <select
+                  value={newBoxLetter}
+                  onChange={e => setNewBoxLetter(e.target.value)}
+                  style={{ flex: 1, fontSize: 12 }}
+                >
+                  <option value="">— pick location —</option>
+                  {boxLocations.map(loc => (
+                    <option key={loc.letter} value={loc.letter}>
+                      {loc.letter} — {loc.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={!newBoxLetter}
+                  onClick={handleAddBox}
+                  style={{ whiteSpace: 'nowrap', fontSize: 12 }}
+                >+ Add box</button>
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: 'var(--text2)', fontStyle: 'italic', display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span>No locations set up yet.</span>
+                <button
+                  type="button"
+                  className="btn"
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => { closeModal(); openModal('settings'); }}
+                >Open Settings</button>
+              </div>
             )}
           </div>
+
           <div className="field"><label>N3D website URL (optional)</label><input value={n3dUrl} onChange={e => setN3dUrl(e.target.value)} placeholder="https://www.n3dmelbourne.com/designs/..." /></div>
           <div className="field"><label>designer</label><input value={designer} onChange={e => setDesigner(e.target.value)} placeholder="e.g. N3D Melbourne" /></div>
           <div className="field">

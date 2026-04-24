@@ -19,10 +19,11 @@ function SettingsSection({ id, collapsed, toggleSection, title, children }) {
 export default function SettingsModal() {
   const {
     closeModal, appSettings, saveAppSettings, isElectron,
-    getCategoryOrder, getStorageLocations, getOutgoingDests,
+    getCategoryOrder, getStorageLocations, getOutgoingDests, getBoxLocations, getLabelSize,
     addCategory, removeCategory, moveCategoryOrder, openModal,
     addStorageLocation, removeStorageLocation, moveStorageLocation,
     addOutgoingDest, removeOutgoingDest, moveOutgoingDest,
+    addBoxLocation, removeBoxLocation, moveBoxLocation,
     exportData,
   } = useApp();
 
@@ -88,6 +89,11 @@ export default function SettingsModal() {
   const [newCat, setNewCat] = useState('');
   const [newLoc, setNewLoc] = useState('');
   const [newDest, setNewDest] = useState('');
+  const [newBoxLetter, setNewBoxLetter] = useState('');
+  const [newBoxName, setNewBoxName] = useState('');
+  const [labelW, setLabelW] = useState(String(getLabelSize().width));
+  const [labelH, setLabelH] = useState(String(getLabelSize().height));
+  const [labelShowParts, setLabelShowParts] = useState(appSettings.labelShowParts !== false);
 
   const toggleSection = (id) => {
     setCollapsed(prev => {
@@ -99,7 +105,10 @@ export default function SettingsModal() {
   };
 
   const handleSave = async () => {
-    await saveAppSettings({ ...appSettings, ...form });
+    const w = parseFloat(labelW);
+    const h = parseFloat(labelH);
+    const labelSize = (w > 0 && h > 0) ? { width: w, height: h } : getLabelSize();
+    await saveAppSettings({ ...appSettings, ...form, labelSize, labelShowParts });
     closeModal();
   };
 
@@ -109,6 +118,7 @@ export default function SettingsModal() {
   const cats = getCategoryOrder().filter(c => !SYSTEM_CATS.includes(c.toLowerCase()));
   const locs = getStorageLocations();
   const dests = getOutgoingDests();
+  const boxLocs = getBoxLocations();
 
 
   return (
@@ -272,6 +282,95 @@ export default function SettingsModal() {
                   <input value={newDest} onChange={e => setNewDest(e.target.value)} placeholder="New destination name" style={{ flex: 1 }} onKeyDown={e => { if (e.key === 'Enter' && newDest.trim()) { addOutgoingDest(newDest.trim()); setNewDest(''); } }} />
                   <button className="btn btn-primary" onClick={() => { if (newDest.trim()) { addOutgoingDest(newDest.trim()); setNewDest(''); } }}>Add</button>
                 </div>
+              </div>
+            </SettingsSection>
+
+            <SettingsSection collapsed={collapsed} toggleSection={toggleSection} id="ssec-partsbox" title="📦 Parts Box Labels">
+              <p style={{ fontSize: 12, color: 'var(--text2)', marginBottom: 12, lineHeight: 1.6 }}>
+                Named storage locations — each gets a letter used in box codes (e.g. <strong>A</strong> → A1, A2…).
+                Click a box badge on any product card to preview and print its label.
+              </p>
+
+              <div className="field">
+                <label>Locations</label>
+                {boxLocs.length === 0 && (
+                  <p style={{ fontSize: 12, color: 'var(--text2)', fontStyle: 'italic', marginBottom: 8 }}>No locations yet — add one below.</p>
+                )}
+                {boxLocs.map((loc, idx) => (
+                  <div key={loc.letter} className="cat-row">
+                    <span className="cat-row-name" style={{ fontFamily: 'monospace', fontWeight: 700, minWidth: 20 }}>{esc(loc.letter)}</span>
+                    <span className="cat-row-name" style={{ flex: 1 }}>{esc(loc.name)}</span>
+                    <button className="btn cat-row-btn" disabled={idx === 0} onClick={() => moveBoxLocation(loc.letter, 'up')}>↑</button>
+                    <button className="btn cat-row-btn" disabled={idx === boxLocs.length - 1} onClick={() => moveBoxLocation(loc.letter, 'down')}>↓</button>
+                    <button className="btn cat-row-btn cat-row-del" onClick={() => setConfirmState({ message: `Remove location "${loc.letter} — ${loc.name}"?`, confirmLabel: 'remove', danger: true, onConfirm: () => { setConfirmState(null); removeBoxLocation(loc.letter); } })}>✕</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input
+                    value={newBoxLetter}
+                    onChange={e => setNewBoxLetter(e.target.value.slice(0, 1).toUpperCase())}
+                    placeholder="A"
+                    maxLength={1}
+                    style={{ width: 40, textTransform: 'uppercase', fontFamily: 'monospace', fontWeight: 700, textAlign: 'center' }}
+                  />
+                  <input
+                    value={newBoxName}
+                    onChange={e => setNewBoxName(e.target.value)}
+                    placeholder="Location name (e.g. Drawer 1)"
+                    style={{ flex: 1 }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' && newBoxLetter.trim() && newBoxName.trim()) {
+                        addBoxLocation(newBoxLetter.trim(), newBoxName.trim());
+                        setNewBoxLetter(''); setNewBoxName('');
+                      }
+                    }}
+                  />
+                  <button className="btn btn-primary" onClick={() => {
+                    if (newBoxLetter.trim() && newBoxName.trim()) {
+                      addBoxLocation(newBoxLetter.trim(), newBoxName.trim());
+                      setNewBoxLetter(''); setNewBoxName('');
+                    }
+                  }}>Add</button>
+                </div>
+                {boxLocs.some(l => l.letter === newBoxLetter.toUpperCase()) && newBoxLetter && (
+                  <p style={{ fontSize: 11, color: 'var(--amber-text)', marginTop: 4 }}>Letter "{newBoxLetter}" is already used.</p>
+                )}
+              </div>
+
+              <div className="field" style={{ marginBottom: 0 }}>
+                <label>Label size (inches)</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>W</span>
+                    <input
+                      type="number" step="0.05" min="0.5" max="8"
+                      value={labelW}
+                      onChange={e => setLabelW(e.target.value)}
+                      style={{ width: 70 }}
+                    />
+                  </div>
+                  <span style={{ color: 'var(--text3)' }}>×</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text2)' }}>H</span>
+                    <input
+                      type="number" step="0.05" min="0.5" max="8"
+                      value={labelH}
+                      onChange={e => setLabelH(e.target.value)}
+                      style={{ width: 70 }}
+                    />
+                  </div>
+                  <span style={{ fontSize: 12, color: 'var(--text2)' }}>in</span>
+                  <button className="btn" style={{ fontSize: 11 }} onClick={() => { setLabelW('2.25'); setLabelH('1.25'); }}>Reset</button>
+                </div>
+                <p style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>Default: 2.25 × 1.25 in (standard Dymo label). Changes saved with Settings.</p>
+              </div>
+
+              <div className="field" style={{ marginBottom: 0, marginTop: 10 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+                  <input type="checkbox" checked={labelShowParts} onChange={e => setLabelShowParts(e.target.checked)} />
+                  Show parts list on label
+                </label>
+                <p style={{ fontSize: 11, color: 'var(--text2)', marginTop: 4 }}>When on, you can choose which parts to include each time you print a label.</p>
               </div>
             </SettingsSection>
 

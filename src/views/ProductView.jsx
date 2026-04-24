@@ -288,11 +288,22 @@ function ProductCard({ item }) {
           </span>
         )}
         {products[item]?.shiny && <span className="badge-shiny">✨ shiny</span>}
-        {products[item]?.partsBoxEnabled && (
-          <span className="badge-shiny" style={{ background: 'var(--bg2)', color: 'var(--text2)', borderColor: 'var(--border2)' }} title="has a parts box">
-            📦{products[item].partsBox ? ` #${products[item].partsBox}` : ' parts box'}
+        {(products[item]?.partsBoxes?.length > 0
+          ? products[item].partsBoxes
+          : (products[item]?.partsBoxEnabled && products[item]?.partsBox
+              ? [{ code: products[item].partsBox, locationLetter: '' }]
+              : [])
+        ).map(box => (
+          <span
+            key={box.code}
+            className="badge-shiny"
+            style={{ background: 'var(--bg2)', color: 'var(--text2)', borderColor: 'var(--border2)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+            title={`Parts box ${box.code} — click to print label`}
+            onClick={e => { e.stopPropagation(); openModal('parts-box-label', { item, code: box.code }); }}
+          >
+            📦 {esc(box.code)} <span style={{ fontSize: 10, opacity: 0.7 }}>🖨</span>
           </span>
-        )}
+        ))}
 
         {ps.length === 0 ? (
           <span style={{ fontSize: 12, color: 'var(--text2)', fontStyle: 'italic' }}>no parts yet — expand to add one</span>
@@ -427,4 +438,3 @@ function QtyCell({ partId, displayed, total, qty }) {
     </span>
   );
 }
-

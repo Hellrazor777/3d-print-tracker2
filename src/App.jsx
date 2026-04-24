@@ -23,6 +23,7 @@ import AddInventoryModal from './modals/AddInventoryModal';
 import RenameCatModal from './modals/RenameCatModal';
 import FilamentLibraryModal from './modals/FilamentLibraryModal';
 import PartsBoxCheckModal from './modals/PartsBoxCheckModal';
+import PartsBoxLabelModal from './modals/PartsBoxLabelModal';
 
 // Detect if this window was opened as a pop-out for a specific view
 const popoutView = new URLSearchParams(window.location.search).get('popout');
@@ -83,6 +84,7 @@ export default function App() {
       {modal?.type === 'rename-cat' && <RenameCatModal />}
       {modal?.type === 'filament-library' && <FilamentLibraryModal />}
       {modal?.type === 'parts-box-check' && <PartsBoxCheckModal />}
+      {modal?.type === 'parts-box-label' && <PartsBoxLabelModal />}
 
       <BackToTop />
       {undoStack.length > 0 && (
@@ -108,10 +110,4 @@ function BackToTop() {
   return (
     <button
       id="back-to-top"
-      className={visible ? 'visible' : ''}
-      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-      title="Back to top"
-    >↑</button>
-  );
-}
-
+      className={visible ? 'visible

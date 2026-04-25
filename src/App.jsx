@@ -110,4 +110,10 @@ function BackToTop() {
   return (
     <button
       id="back-to-top"
-      className={visible ? 'visible
+      className={visible ? 'visible' : ''}
+      onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+      title="Back to top"
+    >↑</button>
+  );
+}
+

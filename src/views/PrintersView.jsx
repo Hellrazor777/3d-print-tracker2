@@ -1763,7 +1763,7 @@ function AddSnapmakerPanel({ existingPrinters, onSave, onClose }) {
 // Shows when running as Electron.  Lets the user start/stop the relay that
 // streams LAN camera footage to the cloud server.
 
-function CloudRelayPanel({ appSettings, saveAppSettings }) {
+function CloudRelayPanel({ appSettings, saveAppSettings, collapsed, onToggle }) {
   const [relayConnected, setRelayConnected] = useState(false);
   const [relayActive,    setRelayActive]    = useState(false);
   const [relayError,     setRelayError]     = useState('');
@@ -1818,6 +1818,9 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
   return (
     <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        <button onClick={onToggle} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text2)', fontSize: 11, display: 'flex', alignItems: 'center' }}>
+          <span style={{ display: 'inline-block', transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
+        </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, display: 'inline-block', flexShrink: 0 }} />
           <span style={{ fontWeight: 600, fontSize: 13 }}>Cloud Camera Relay</span>
@@ -1826,18 +1829,20 @@ function CloudRelayPanel({ appSettings, saveAppSettings }) {
           </span>
           {relayError && <span style={{ fontSize: 11, color: 'var(--red-text, #ef4444)' }}>{relayError}</span>}
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button className="btn" style={{ fontSize: 12 }} onClick={() => { setUrlInput(savedUrl); setTokenInput(savedToken); setEditing(e => !e); }}>
-            {editing ? 'Cancel' : 'Configure'}
-          </button>
-          {relayActive
-            ? <button className="btn" style={{ fontSize: 12, color: 'var(--red-text, #ef4444)' }} onClick={handleStop}>Stop relay</button>
-            : <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleStart}>Start relay</button>
-          }
-        </div>
+        {!collapsed && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn" style={{ fontSize: 12 }} onClick={() => { setUrlInput(savedUrl); setTokenInput(savedToken); setEditing(e => !e); }}>
+              {editing ? 'Cancel' : 'Configure'}
+            </button>
+            {relayActive
+              ? <button className="btn" style={{ fontSize: 12, color: 'var(--red-text, #ef4444)' }} onClick={handleStop}>Stop relay</button>
+              : <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleStart}>Start relay</button>
+            }
+          </div>
+        )}
       </div>
 
-      {editing && (
+      {!collapsed && editing && (
         <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 12, color: 'var(--text2)' }}>
             Enter your cloud server URL and relay token (set <code>CAMERA_RELAY_TOKEN</code> in your Render env vars).
@@ -1884,6 +1889,8 @@ export default function PrintersView() {
   const [webDevices, setWebDevices] = useState([]);
 
   const [showAddSnap,  setShowAddSnap]  = useState(false);
+  const [bambuCollapsed, setBambuCollapsed] = useState(false);
+  const [relayCollapsed, setRelayCollapsed] = useState(false);
 
   // SSE connection for web mode
   useEffect(() => {
@@ -2011,7 +2018,10 @@ export default function PrintersView() {
   return (
     <div>
       {/* Status bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button onClick={() => setBambuCollapsed(c => !c)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--text2)', fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ display: 'inline-block', transition: 'transform .2s', transform: bambuCollapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
+        </button>
         <div style={{ fontSize: 13, color: 'var(--text2)', display: 'flex', gap: 16 }}>
           {hasBambu && (
             <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -2024,25 +2034,27 @@ export default function PrintersView() {
             <span>{totalPrinters} printer{totalPrinters !== 1 ? 's' : ''} · {printing} printing</span>
           )}
         </div>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          {hasBambu && bambuConn.connected && (
-            <button className="btn" style={{ fontSize: 12 }} onClick={() => handleRefreshBambu(null)}>↻ Refresh all</button>
-          )}
-          {hasBambu && !bambuConn.connected && !bambuConn.connecting && !bambuConn.reconnecting && (
-            <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleReconnectBambu}>Reconnect Bambu</button>
-          )}
-          {hasBambu && (
-            <button className="btn" style={{ fontSize: 12, color: 'var(--red-text, #ef4444)' }} onClick={handleDisconnectBambu}>Disconnect</button>
-          )}
-          {isElectron && (
-            <button className="btn" style={{ fontSize: 12 }} onClick={() => setShowAddSnap(true)}>+ Snapmaker</button>
-          )}
-        </div>
+        {!bambuCollapsed && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            {hasBambu && bambuConn.connected && (
+              <button className="btn" style={{ fontSize: 12 }} onClick={() => handleRefreshBambu(null)}>↻ Refresh all</button>
+            )}
+            {hasBambu && !bambuConn.connected && !bambuConn.connecting && !bambuConn.reconnecting && (
+              <button className="btn btn-primary" style={{ fontSize: 12 }} onClick={handleReconnectBambu}>Reconnect Bambu</button>
+            )}
+            {hasBambu && (
+              <button className="btn" style={{ fontSize: 12, color: 'var(--red-text, #ef4444)' }} onClick={handleDisconnectBambu}>Disconnect</button>
+            )}
+            {isElectron && (
+              <button className="btn" style={{ fontSize: 12 }} onClick={() => setShowAddSnap(true)}>+ Snapmaker</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Cloud camera relay — desktop only */}
       {isElectron && (
-        <CloudRelayPanel appSettings={appSettings} saveAppSettings={saveAppSettings} />
+        <CloudRelayPanel appSettings={appSettings} saveAppSettings={saveAppSettings} collapsed={relayCollapsed} onToggle={() => setRelayCollapsed(c => !c)} />
       )}
 
       {/* Bambu login — shown when not connected */}
@@ -2052,7 +2064,7 @@ export default function PrintersView() {
 
       {/* Printer grid */}
       {totalPrinters > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16 }}>
           {[...bambuDevices].sort((a, b) => (a.name || a.dev_product_name || '').localeCompare(b.name || b.dev_product_name || '')).map(device => {
             const serial = device.dev_id;
             const state = printerStatus[serial];
